@@ -42,6 +42,7 @@ export default function Home() {
   };
 
   const startSpeechRecognition = () => {
+    if (typeof window === "undefined") return;
   const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   
   if (!SpeechRecognition) {
@@ -129,7 +130,7 @@ export default function Home() {
     }
   };
 
-  const currentChat = chats.find(c => c.id === currentChatId) || chats[0];
+  const currentChat = chats.find(c => c.id === currentChatId) || chats[0] || { messages: [] };
 
   return (
     <div className={`flex h-screen ${darkMode ? "bg-[#171717] text-white" : "bg-white text-black"}`}>
