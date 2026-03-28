@@ -15,6 +15,14 @@ export default function StudentDashboard() {
   ]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   useEffect(() => {
     const session = localStorage.getItem("current_session");
@@ -60,7 +68,7 @@ export default function StudentDashboard() {
       const res = await fetch("/api/chat", { method: "POST", body: JSON.stringify({ messages: updated }) });
       const data = await res.json();
       setChatMessages([...updated, { role: "assistant", content: data.text }]);
-    } catch { setChatMessages([...updated, { role: "assistant", content: "Ошибка связи. Попробуйте позже." }]); }
+    } catch { setChatMessages([...updated, { role: "assistant", content: "Ошибка связи." }]); }
     finally { setChatLoading(false); }
   };
 
@@ -68,13 +76,164 @@ export default function StudentDashboard() {
 
   const navItems = [
     { id: "menu", icon: "🏠", label: "Главная" },
-    { id: "chat", icon: "🤖", label: "ИИ-ассистент" },
+    { id: "submit", icon: "📤", label: "Подать" },
+    { id: "status", icon: "🕒", label: "Заявки" },
+    { id: "chat", icon: "🤖", label: "ИИ" },
   ];
 
+  const statusColor = (s: string) => s === 'Принято' ? '#22c55e' : s === 'Ошибка' ? '#ef4444' : '#f59e0b';
+  const statusBg = (s: string) => s === 'Принято' ? '#dcfce7' : s === 'Ошибка' ? '#fee2e2' : '#fef9c3';
+  const statusText = (s: string) => s === 'Принято' ? '#16a34a' : s === 'Ошибка' ? '#dc2626' : '#ca8a04';
+
+  const mainContent = (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f0f4f8' }}>
+      {/* Header */}
+      <div style={{ background: 'white', padding: isMobile ? '14px 16px' : '18px 32px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', flexShrink: 0 }}>
+        <h1 style={{ color: '#1e293b', fontSize: isMobile ? '16px' : '18px', fontWeight: '700', margin: 0 }}>
+          {activeTab === 'menu' ? '🏠 Главная' : activeTab === 'chat' ? '🤖 ИИ-ассистент' : activeTab === 'submit' ? '📤 Подать документы' : '🕒 Мои заявки'}
+        </h1>
+        {isMobile && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ width: '32px', height: '32px', background: 'linear-gradient(135deg, #1e3a5f, #2563eb)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '700', fontSize: '14px' }}>{student.name?.[0]}</div>
+          </div>
+        )}
+        {!isMobile && <div style={{ fontSize: '13px', color: '#64748b' }}>Университет им. К. Жубанова</div>}
+      </div>
+
+      <div style={{ flex: 1, padding: isMobile ? '16px' : '28px 32px', overflowY: 'auto', paddingBottom: isMobile ? '80px' : '28px' }}>
+
+        {/* ГЛАВНАЯ */}
+        {activeTab === "menu" && (
+          <div>
+            <p style={{ color: '#64748b', marginBottom: '20px', fontSize: '14px' }}>Добро пожаловать, <strong>{student.name}</strong>!</p>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr 1fr', gap: '14px' }}>
+              {[
+                { id: 'submit', icon: '📤', title: 'Подать документы', desc: 'Загрузить файлы', color: '#2563eb' },
+                { id: 'status', icon: '🕒', title: 'Мои заявки', desc: `Заявок: ${apps.length}`, color: '#7c3aed' },
+                { id: 'chat', icon: '🤖', title: 'ИИ-ассистент', desc: 'Задать вопрос', color: '#059669' },
+              ].map(card => (
+                <div key={card.id} onClick={() => { setActiveTab(card.id); if(card.id==='status') loadApps(student.login); }}
+                  style={{ background: 'white', borderRadius: '14px', padding: isMobile ? '20px 16px' : '28px 24px', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #e5e7eb' }}>
+                  <div style={{ fontSize: isMobile ? '28px' : '32px', marginBottom: '10px' }}>{card.icon}</div>
+                  <div style={{ fontWeight: '700', fontSize: isMobile ? '14px' : '16px', color: '#1e293b', marginBottom: '4px' }}>{card.title}</div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>{card.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ПОДАТЬ ДОКУМЕНТЫ */}
+        {activeTab === "submit" && (
+          <div style={{ maxWidth: '600px' }}>
+            <div style={{ background: 'white', borderRadius: '16px', padding: isMobile ? '20px 16px' : '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #e5e7eb' }}>
+              <h2 style={{ color: '#1e293b', marginBottom: '8px', fontSize: isMobile ? '17px' : '20px' }}>Загрузка документов</h2>
+              <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '20px' }}>Прикрепите файлы и отправьте в деканат</p>
+              <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '32px 16px', border: '2px dashed #cbd5e1', borderRadius: '12px', cursor: 'pointer', backgroundColor: '#f8fafc', marginBottom: '16px' }}>
+                <span style={{ fontSize: '36px' }}>📁</span>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ color: '#2563eb', fontWeight: '600', fontSize: '14px' }}>Нажмите чтобы выбрать файл</div>
+                  <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px' }}>PDF, DOCX, JPG и другие</div>
+                </div>
+                <input type="file" onChange={handleFile} style={{ display: 'none' }} />
+              </label>
+              {files.length > 0 && (
+                <div style={{ marginBottom: '16px' }}>
+                  {files.map((f, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', marginBottom: '8px' }}>
+                      <span style={{ color: '#0369a1', fontSize: '13px' }}>📄 {f.name}</span>
+                      <button onClick={() => setFiles(files.filter((_, idx) => idx !== i))} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer', fontSize: '20px' }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button onClick={sendDoc} disabled={loading || files.length === 0}
+                style={{ width: '100%', padding: '14px', background: files.length === 0 ? '#94a3b8' : 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '15px', cursor: files.length === 0 ? 'not-allowed' : 'pointer' }}>
+                {loading ? "⏳ Отправляем..." : files.length === 0 ? "Сначала выберите файлы" : `📤 Отправить ${files.length} файл(а)`}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* МОИ ЗАЯВКИ */}
+        {activeTab === "status" && (
+          <div style={{ maxWidth: '700px' }}>
+            <h2 style={{ color: '#1e293b', marginBottom: '16px', fontSize: isMobile ? '17px' : '20px' }}>Мои заявки</h2>
+            {apps.length === 0 ? (
+              <div style={{ background: 'white', borderRadius: '16px', padding: '48px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
+                <div style={{ fontSize: '48px', marginBottom: '12px' }}>📭</div>
+                <div style={{ color: '#64748b' }}>Заявок пока нет</div>
+              </div>
+            ) : apps.map(app => (
+              <div key={app.id} style={{ background: 'white', borderRadius: '14px', padding: '16px', marginBottom: '12px', borderLeft: `5px solid ${statusColor(app.status)}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', background: statusBg(app.status), color: statusText(app.status) }}>{app.status}</span>
+                  <span style={{ color: '#94a3b8', fontSize: '12px' }}>{new Date(app.created_at).toLocaleDateString('ru-RU')}</span>
+                </div>
+                <div style={{ color: '#64748b', fontSize: '13px' }}>📄 {app.file_names?.join(", ")}</div>
+                {app.comment && <div style={{ marginTop: '8px', padding: '8px 12px', background: '#fef2f2', borderRadius: '8px', color: '#dc2626', fontSize: '13px' }}>💬 {app.comment}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ЧАТ */}
+        {activeTab === "chat" && (
+          <div style={{ maxWidth: '720px', height: isMobile ? 'calc(100vh - 180px)' : 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 1, background: 'white', borderRadius: '16px', border: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+              <div style={{ padding: '14px 16px', borderBottom: '1px solid #e5e7eb', background: '#f8fafc' }}>
+                <div style={{ fontWeight: '600', color: '#1e293b', fontSize: '14px' }}>🤖 ИИ-ассистент Жубанова</div>
+                <div style={{ color: '#64748b', fontSize: '12px' }}>Отвечает на вопросы об университете</div>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {chatMessages.map((m, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                    <div style={{ maxWidth: '85%', padding: '10px 14px', borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: m.role === 'user' ? 'linear-gradient(135deg, #2563eb, #1d4ed8)' : '#f1f5f9', color: m.role === 'user' ? 'white' : '#1e293b', fontSize: '14px', lineHeight: '1.5' }}>
+                      {m.content}
+                    </div>
+                  </div>
+                ))}
+                {chatLoading && <div style={{ display: 'flex' }}><div style={{ padding: '10px 14px', background: '#f1f5f9', borderRadius: '18px 18px 18px 4px', color: '#64748b', fontSize: '14px' }}>⏳ Думаю...</div></div>}
+              </div>
+              <div style={{ padding: '12px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: '8px' }}>
+                <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} placeholder="Напишите вопрос..." style={{ flex: 1, padding: '11px 14px', border: '1px solid #e5e7eb', borderRadius: '12px', outline: 'none', fontSize: '14px', color: '#1e293b' }} />
+                <button onClick={sendChat} disabled={chatLoading} style={{ padding: '11px 16px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: '600' }}>➤</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: "'Inter', sans-serif" }}>
+        {mainContent}
+        {/* Нижняя навигация */}
+        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'white', borderTop: '1px solid #e5e7eb', display: 'flex', zIndex: 100, boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
+          {navItems.map(item => (
+            <button key={item.id} onClick={() => { setActiveTab(item.id); if(item.id==='status') loadApps(student.login); }}
+              style={{ flex: 1, padding: '10px 4px', border: 'none', background: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+              <span style={{ fontSize: '22px' }}>{item.icon}</span>
+              <span style={{ fontSize: '10px', fontWeight: activeTab === item.id ? '700' : '400', color: activeTab === item.id ? '#2563eb' : '#94a3b8' }}>{item.label}</span>
+              {activeTab === item.id && <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#2563eb' }} />}
+            </button>
+          ))}
+          <button onClick={() => { localStorage.removeItem("current_session"); router.push("/auth"); }}
+            style={{ flex: 1, padding: '10px 4px', border: 'none', background: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+            <span style={{ fontSize: '22px' }}>🚪</span>
+            <span style={{ fontSize: '10px', color: '#ef4444' }}>Выйти</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f0f4f8', fontFamily: "'Inter', sans-serif" }}>
-      {/* Sidebar */}
-      <div style={{ width: '260px', background: 'linear-gradient(180deg, #1e3a5f 0%, #2563eb 100%)', display: 'flex', flexDirection: 'column', padding: '0', boxShadow: '4px 0 20px rgba(0,0,0,0.15)' }}>
+    <div style={{ display: 'flex', height: '100vh', fontFamily: "'Inter', sans-serif" }}>
+      {/* Sidebar — только для ПК */}
+      <div style={{ width: '260px', background: 'linear-gradient(180deg, #1e3a5f 0%, #2563eb 100%)', display: 'flex', flexDirection: 'column', boxShadow: '4px 0 20px rgba(0,0,0,0.15)', flexShrink: 0 }}>
         <div style={{ padding: '30px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
           <div style={{ width: '56px', height: '56px', background: 'rgba(255,255,255,0.2)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', fontWeight: 'bold', color: 'white', margin: '0 auto' }}>{student.name?.[0]}</div>
           <div style={{ textAlign: 'center', marginTop: '12px' }}>
@@ -83,140 +242,21 @@ export default function StudentDashboard() {
           </div>
         </div>
         <nav style={{ flex: 1, padding: '16px 12px' }}>
-          {navItems.map(item => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} style={{ width: '100%', padding: '12px 16px', marginBottom: '6px', border: 'none', borderRadius: '10px', background: activeTab === item.id ? 'rgba(255,255,255,0.2)' : 'transparent', color: 'white', fontWeight: activeTab === item.id ? '600' : '400', fontSize: '14px', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', transition: 'all 0.2s' }}>
+          {[{ id: "menu", icon: "🏠", label: "Главная" }, { id: "chat", icon: "🤖", label: "ИИ-ассистент" }].map(item => (
+            <button key={item.id} onClick={() => setActiveTab(item.id)}
+              style={{ width: '100%', padding: '12px 16px', marginBottom: '6px', border: 'none', borderRadius: '10px', background: activeTab === item.id ? 'rgba(255,255,255,0.2)' : 'transparent', color: 'white', fontWeight: activeTab === item.id ? '600' : '400', fontSize: '14px', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span>{item.icon}</span> {item.label}
             </button>
           ))}
         </nav>
         <div style={{ padding: '16px 12px' }}>
-          <button onClick={() => { localStorage.removeItem("current_session"); router.push("/auth"); }} style={{ width: '100%', padding: '11px', border: '1px solid rgba(255,255,255,0.3)', color: 'rgba(255,255,255,0.8)', borderRadius: '10px', backgroundColor: 'transparent', cursor: 'pointer', fontSize: '14px' }}>
+          <button onClick={() => { localStorage.removeItem("current_session"); router.push("/auth"); }}
+            style={{ width: '100%', padding: '11px', border: '1px solid rgba(255,255,255,0.3)', color: 'rgba(255,255,255,0.8)', borderRadius: '10px', backgroundColor: 'transparent', cursor: 'pointer', fontSize: '14px' }}>
             Выйти
           </button>
         </div>
       </div>
-
-      {/* Main content */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Header */}
-        <div style={{ background: 'white', padding: '18px 32px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <h1 style={{ color: '#1e293b', fontSize: '18px', fontWeight: '700', margin: 0 }}>
-            {activeTab === 'menu' ? '🏠 Главная' : activeTab === 'chat' ? '🤖 ИИ-ассистент' : activeTab === 'submit' ? '📤 Подать документы' : '🕒 Мои заявки'}
-          </h1>
-          <div style={{ fontSize: '13px', color: '#64748b' }}>Университет им. К. Жубанова</div>
-        </div>
-
-        <div style={{ flex: 1, padding: '28px 32px', overflowY: 'auto' }}>
-
-          {/* ГЛАВНАЯ */}
-          {activeTab === "menu" && (
-            <div>
-              <p style={{ color: '#64748b', marginBottom: '24px', fontSize: '15px' }}>Добро пожаловать, <strong>{student.name}</strong>! Выберите действие:</p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', maxWidth: '900px' }}>
-                {[
-                  { id: 'submit', icon: '📤', title: 'Подать документы', desc: 'Загрузить файлы для деканата', color: '#2563eb' },
-                  { id: 'status', icon: '🕒', title: 'Мои заявки', desc: `Активных заявок: ${apps.length}`, color: '#7c3aed' },
-                  { id: 'chat', icon: '🤖', title: 'ИИ-ассистент', desc: 'Задать вопрос нейросети', color: '#059669' },
-                ].map(card => (
-                  <div key={card.id} onClick={() => { setActiveTab(card.id); if(card.id==='status') loadApps(student.login); }} style={{ background: 'white', borderRadius: '16px', padding: '28px 24px', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #e5e7eb', transition: 'all 0.2s' }}
-                    onMouseEnter={e => (e.currentTarget.style.transform = 'translateY(-3px)', e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)')}
-                    onMouseLeave={e => (e.currentTarget.style.transform = 'translateY(0)', e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)')}>
-                    <div style={{ fontSize: '32px', marginBottom: '12px' }}>{card.icon}</div>
-                    <div style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b', marginBottom: '6px' }}>{card.title}</div>
-                    <div style={{ fontSize: '13px', color: '#64748b' }}>{card.desc}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ПОДАТЬ ДОКУМЕНТЫ */}
-          {activeTab === "submit" && (
-            <div style={{ maxWidth: '600px' }}>
-              <div style={{ background: 'white', borderRadius: '16px', padding: '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #e5e7eb' }}>
-                <h2 style={{ color: '#1e293b', marginBottom: '8px', fontSize: '20px' }}>Загрузка документов</h2>
-                <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '24px' }}>Прикрепите необходимые файлы и отправьте в деканат</p>
-                
-                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: '40px', border: '2px dashed #cbd5e1', borderRadius: '12px', cursor: 'pointer', backgroundColor: '#f8fafc', marginBottom: '20px' }}>
-                  <span style={{ fontSize: '32px' }}>📁</span>
-                  <div>
-                    <div style={{ color: '#2563eb', fontWeight: '600', fontSize: '15px' }}>Нажмите чтобы выбрать файл</div>
-                    <div style={{ color: '#94a3b8', fontSize: '13px', marginTop: '4px' }}>PDF, DOCX, JPG и другие</div>
-                  </div>
-                  <input type="file" onChange={handleFile} style={{ display: 'none' }} />
-                </label>
-
-                {files.length > 0 && (
-                  <div style={{ marginBottom: '20px' }}>
-                    {files.map((f, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', marginBottom: '8px' }}>
-                        <span style={{ color: '#0369a1', fontSize: '14px' }}>📄 {f.name}</span>
-                        <button onClick={() => setFiles(files.filter((_, idx) => idx !== i))} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }}>×</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <button onClick={sendDoc} disabled={loading || files.length === 0} style={{ width: '100%', padding: '14px', background: files.length === 0 ? '#94a3b8' : 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '15px', cursor: files.length === 0 ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}>
-                  {loading ? "⏳ Отправляем..." : files.length === 0 ? "Сначала выберите файлы" : `📤 Отправить ${files.length} файл(а) в деканат`}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* МОИ ЗАЯВКИ */}
-          {activeTab === "status" && (
-            <div style={{ maxWidth: '700px' }}>
-              <h2 style={{ color: '#1e293b', marginBottom: '20px', fontSize: '20px' }}>Мои заявки</h2>
-              {apps.length === 0 ? (
-                <div style={{ background: 'white', borderRadius: '16px', padding: '48px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
-                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>📭</div>
-                  <div style={{ color: '#64748b', fontSize: '15px' }}>Заявок пока нет</div>
-                </div>
-              ) : apps.map(app => (
-                <div key={app.id} style={{ background: 'white', borderRadius: '16px', padding: '20px 24px', marginBottom: '12px', border: '1px solid #e5e7eb', borderLeft: `5px solid ${app.status === 'Принято' ? '#22c55e' : app.status === 'Ошибка' ? '#ef4444' : '#f59e0b'}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', background: app.status === 'Принято' ? '#dcfce7' : app.status === 'Ошибка' ? '#fee2e2' : '#fef9c3', color: app.status === 'Принято' ? '#16a34a' : app.status === 'Ошибка' ? '#dc2626' : '#ca8a04' }}>{app.status}</span>
-                      <div style={{ color: '#64748b', fontSize: '13px', marginTop: '8px' }}>Файлы: {app.file_names?.join(", ")}</div>
-                    </div>
-                    <div style={{ color: '#94a3b8', fontSize: '12px' }}>{new Date(app.created_at).toLocaleDateString('ru-RU')}</div>
-                  </div>
-                  {app.comment && <div style={{ marginTop: '10px', padding: '10px 14px', background: '#fef2f2', borderRadius: '8px', color: '#dc2626', fontSize: '13px' }}>💬 {app.comment}</div>}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* ЧАТ */}
-          {activeTab === "chat" && (
-            <div style={{ maxWidth: '720px', height: 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ flex: 1, background: 'white', borderRadius: '16px', border: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb', background: '#f8fafc' }}>
-                  <div style={{ fontWeight: '600', color: '#1e293b', fontSize: '15px' }}>🤖 ИИ-ассистент Жубанова</div>
-                  <div style={{ color: '#64748b', fontSize: '12px' }}>Отвечает на вопросы об университете</div>
-                </div>
-                <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {chatMessages.map((m, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                      <div style={{ maxWidth: '80%', padding: '12px 16px', borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: m.role === 'user' ? 'linear-gradient(135deg, #2563eb, #1d4ed8)' : '#f1f5f9', color: m.role === 'user' ? 'white' : '#1e293b', fontSize: '14px', lineHeight: '1.5' }}>
-                        {m.content}
-                      </div>
-                    </div>
-                  ))}
-                  {chatLoading && <div style={{ display: 'flex', justifyContent: 'flex-start' }}><div style={{ padding: '12px 16px', background: '#f1f5f9', borderRadius: '18px 18px 18px 4px', color: '#64748b', fontSize: '14px' }}>⏳ Думаю...</div></div>}
-                </div>
-                <div style={{ padding: '16px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: '10px' }}>
-                  <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} placeholder="Напишите вопрос..." style={{ flex: 1, padding: '12px 16px', border: '1px solid #e5e7eb', borderRadius: '12px', outline: 'none', fontSize: '14px', color: '#1e293b' }} />
-                  <button onClick={sendChat} disabled={chatLoading} style={{ padding: '12px 20px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: '600', fontSize: '14px' }}>
-                    ➤
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      {mainContent}
     </div>
   );
 }
