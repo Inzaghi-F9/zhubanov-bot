@@ -22,6 +22,9 @@ export default function AdminDashboard() {
   const session = localStorage.getItem("current_session");
   if (!session) { router.push("/auth"); return; }
   const s = JSON.parse(session);
+  if (s.role !== "admin") { router.push("/dashboard"); return; }
+  loadApps();
+}, []);
 
   // Серверная проверка роли
   fetch("/api/verify", {
