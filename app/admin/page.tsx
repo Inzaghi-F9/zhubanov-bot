@@ -19,29 +19,12 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-  const session = localStorage.getItem("current_session");
-  if (!session) { router.push("/auth"); return; }
-  const s = JSON.parse(session);
-  if (s.role !== "admin") { router.push("/dashboard"); return; }
-  loadApps();
-}, []);
-
-  // Серверная проверка роли
-  fetch("/api/verify", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ login: s.login, password: s.password }),
-  })
-    .then(res => res.json())
-    .then(data => {
-      if (!data.valid || data.role !== "admin") {
-        router.push("/auth");
-      } else {
-        loadApps();
-      }
-    })
-    .catch(() => router.push("/auth"));
-}, []);
+    const session = localStorage.getItem("current_session");
+    if (!session) { router.push("/auth"); return; }
+    const s = JSON.parse(session);
+    if (s.role !== "admin") { router.push("/dashboard"); return; }
+    loadApps();
+  }, []);
 
   const loadApps = async () => {
     const { data } = await supabase.from("applications").select("*").order("created_at", { ascending: false });
