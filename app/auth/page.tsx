@@ -128,7 +128,7 @@ export default function AuthPage() {
   style={{ padding: '13px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none' }}
   onChange={(e) => setFormData({...formData, group: e.target.value})} />
             )}
-            <input placeholder={mode === 'login' ? 'Email или логин админа' : 'Email'} value={formData.email}
+            <input placeholder={mode === 'login' ? 'Email' : 'Email'} value={formData.email}
               style={{ padding: '13px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none' }}
               onChange={(e) => setFormData({...formData, email: e.target.value})} />
             {mode !== 'reset' && (
