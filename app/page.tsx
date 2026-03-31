@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { MessageSquare, Plus, Trash2, Send, Moon, Sun, Menu, Edit2, Mic, MicOff } from "lucide-react";
-
+import toast from "react-hot-toast";
 interface Message { role: string; content: string; }
 interface Chat { id: string; title: string; messages: Message[]; }
 
@@ -46,7 +46,7 @@ export default function Home() {
   const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   
   if (!SpeechRecognition) {
-    alert("Браузер не поддерживает голос.");
+    toast.error("Браузер не поддерживает голос.");
     return;
   }
 
@@ -124,7 +124,7 @@ export default function Home() {
       const data = await res.json();
       setChats(prev => prev.map(c => c.id === currentChatId ? { ...c, messages: [...updatedMessages, { role: "assistant", content: data.text }] } : c));
     } catch (e) {
-      alert("Ошибка сети");
+      toast.error("Ошибка сети");
     } finally {
       setLoading(false);
     }

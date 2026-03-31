@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-
+import toast from "react-hot-toast";
 export default function AuthPage() {
   const router = useRouter();
   const [mode, setMode] = useState<"login" | "register" | "reset">("login");
@@ -35,7 +35,7 @@ export default function AuthPage() {
           password: formData.password,
         });
 
-        if (error) { alert("Неверный email или пароль"); return; }
+        if (error) { toast.error("Неверный email или пароль"); return; }
 
         // Получаем профиль из нашей таблицы
         const { data: profile } = await supabase
@@ -48,12 +48,13 @@ export default function AuthPage() {
           localStorage.setItem("current_session", JSON.stringify({ ...profile, supabase_id: data.user.id }));
           router.push("/dashboard");
         } else {
-          alert("Профиль не найден. Обратитесь к администратору.");
+          toast.error("Профиль не найден. Обратитесь к администратору.");
         }
 
       } else if (mode === "register") {
         if (!formData.email || !formData.password || !formData.name) {
-          alert("Заполните все поля"); return;
+          toast.error("Заполните все поля");
+          return;
         }
 
         // Регистрация через Supabase Auth
@@ -62,7 +63,7 @@ export default function AuthPage() {
           password: formData.password,
         });
 
-        if (error) { alert("Ошибка: " + error.message); return; }
+        if (error) { toast.error("Ошибка: " + error.message); return; }
 
         // Создаём профиль в нашей таблице
         const { error: profileError } = await supabase.from("users").insert([{
@@ -74,9 +75,9 @@ export default function AuthPage() {
           role: "student"
         }]);
 
-        if (profileError) { alert("Логин уже занят"); return; }
+        if (profileError) { toast.error("Логин уже занят"); return; }
 
-        alert("Регистрация успешна! Теперь войдите.");
+        toast.success("Регистрация успешна! Теперь войдите.");
         setMode("login");
 
       } else if (mode === "reset") {
@@ -85,7 +86,7 @@ export default function AuthPage() {
           redirectTo: "https://zhubano-bot.netlify.app/auth/reset",
         });
 
-        if (error) { alert("Ошибка: " + error.message); return; }
+        if (error) { toast.error("Ошибка: " + error.message); return; }
         setResetSent(true);
       }
     } finally {

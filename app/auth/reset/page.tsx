@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-
+import toast from "react-hot-toast";
 export default function ResetPasswordPage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
@@ -21,13 +21,13 @@ export default function ResetPasswordPage() {
   }, []);
 
   const handleReset = async () => {
-    if (!password || password.length < 6) { alert("Пароль минимум 6 символов"); return; }
-    if (password !== confirm) { alert("Пароли не совпадают"); return; }
+    if (!password || password.length < 6) { toast.error("Пароль минимум 6 символов"); return; }
+    if (password !== confirm) { toast.error("Пароли не совпадают"); return; }
 
     setLoading(true);
     const { error } = await supabase.auth.updateUser({ password });
 
-    if (error) { alert("Ошибка: " + error.message); setLoading(false); return; }
+    if (error) { toast.error("Ошибка: " + error.message); setLoading(false); return; }
 
     // Обновляем пароль и в нашей таблице users
     const { data: { user } } = await supabase.auth.getUser();
