@@ -124,14 +124,9 @@ export default function AuthPage() {
                 onChange={(e) => setFormData({...formData, name: e.target.value})} />
             )}
             {mode === 'register' && (
-              <select value={formData.group} onChange={(e) => setFormData({...formData, group: e.target.value})}
-                style={{ padding: '13px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none' }}>
-                <option>IT-202</option>
-                <option>IT-201</option>
-                <option>IT-203</option>
-                <option>МАТ-201</option>
-                <option>ФИЗ-201</option>
-              </select>
+              <input placeholder="Группа (например IT-202)" value={formData.group}
+  style={{ padding: '13px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none' }}
+  onChange={(e) => setFormData({...formData, group: e.target.value})} />
             )}
             <input placeholder={mode === 'login' ? 'Email или логин админа' : 'Email'} value={formData.email}
               style={{ padding: '13px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none' }}
