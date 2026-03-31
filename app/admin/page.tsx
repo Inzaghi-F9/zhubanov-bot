@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-
+import toast from "react-hot-toast";
 export default function AdminDashboard() {
   const router = useRouter();
   const [apps, setApps] = useState<any[]>([]);
@@ -148,14 +148,35 @@ export default function AdminDashboard() {
                   </span>
                 </div>
 
-                {/* Файлы */}
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                  {app.file_names?.map((name: string, i: number) => (
-                    <a key={i} href={app.file_urls[i]} download={name} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', color: '#0369a1', fontSize: '12px', textDecoration: 'none' }}>
-                      💾 {name}
-                    </a>
-                  ))}
-                </div>
+                {/* Детали заявки */}
+{(app.purpose || app.university_name || app.date_from) && (
+  <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+    {app.university_name && (
+      <div style={{ fontSize: '13px', color: '#1e293b' }}>
+        🏫 <strong>Университет:</strong> {app.university_name}
+      </div>
+    )}
+    {app.date_from && app.date_to && (
+      <div style={{ fontSize: '13px', color: '#1e293b' }}>
+        📅 <strong>Сроки:</strong> {new Date(app.date_from).toLocaleDateString('ru-RU')} — {new Date(app.date_to).toLocaleDateString('ru-RU')}
+      </div>
+    )}
+    {app.purpose && (
+      <div style={{ fontSize: '13px', color: '#1e293b' }}>
+        🎯 <strong>Цель:</strong> {app.purpose}
+      </div>
+    )}
+  </div>
+)}
+
+{/* Файлы */}
+<div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+  {app.file_names?.map((name: string, i: number) => (
+    <a key={i} href={app.file_urls[i]} download={name} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', color: '#0369a1', fontSize: '12px', textDecoration: 'none' }}>
+      💾 {name}
+    </a>
+  ))}
+</div>
 
                 {app.comment && (
                   <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#fef2f2', borderRadius: '8px', color: '#dc2626', fontSize: '13px' }}>
