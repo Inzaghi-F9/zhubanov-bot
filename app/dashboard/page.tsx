@@ -65,7 +65,7 @@ useEffect(() => {
   };
 
   const saveProfile = async () => {
-    if (!profileForm.name.trim()) { alert("Имя не может быть пустым"); return; }
+    if (!profileForm.name.trim()) { toast.error("Имя не может быть пустым"); return; }
     setProfileLoading(true);
     const { error } = await supabase.from("users").update({
       name: profileForm.name,
@@ -73,17 +73,17 @@ useEffect(() => {
       avatar_url: avatarUrl,
     }).eq("login", student.login);
 
-    if (error) { alert("Ошибка сохранения"); setProfileLoading(false); return; }
+    if (error) { toast.error("Ошибка сохранения"); setProfileLoading(false); return; }
 
     const updated = { ...student, name: profileForm.name, group_name: profileForm.group_name, avatar_url: avatarUrl };
     setStudent(updated);
     localStorage.setItem("current_session", JSON.stringify(updated));
     setProfileLoading(false);
-    alert("Профиль обновлён! ✅");
+    toast.success("Профиль обновлён! ✅");
   };
 
   const sendDoc = async () => {
-    if (files.length === 0) return alert("Прикрепите файлы");
+    if (files.length === 0) return toast.error("Прикрепите файлы");
     setLoading(true);
     const { error } = await supabase.from("applications").insert([{
       student_name: student.name, student_login: student.login,
@@ -91,8 +91,8 @@ useEffect(() => {
       status: "На проверке", comment: ""
     }]);
     setLoading(false);
-    if (error) { alert("Ошибка отправки"); return; }
-    alert("Документы отправлены!");
+    if (error) { toast.error("Ошибка отправки"); return; }
+    toast.success("Документы отправлены!")
     setFiles([]); setActiveTab("status"); loadApps(student.login);
   };
 
