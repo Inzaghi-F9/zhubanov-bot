@@ -9,7 +9,9 @@ export default function StudentDashboard() {
   const [files, setFiles] = useState<{name: string, data: string}[]>([]);
   const [student, setStudent] = useState<any>(null);
   const [apps, setApps] = useState<any[]>([]);
+
   const [loading, setLoading] = useState(false);
+  const [appForm, setAppForm] = useState({ purpose: "", university_name: "", date_from: "", date_to: "" });
   const [chatMessages, setChatMessages] = useState<{role:string,content:string}[]>([
     {role:"assistant", content:"Сәлеметсіз бе! Я ИИ-ассистент университета им. К. Жубанова. Чем могу помочь?"}
   ]);
@@ -83,18 +85,32 @@ useEffect(() => {
   };
 
   const sendDoc = async () => {
-    if (files.length === 0) return toast.error("Прикрепите файлы");
-    setLoading(true);
-    const { error } = await supabase.from("applications").insert([{
-      student_name: student.name, student_login: student.login,
-      file_names: files.map(f => f.name), file_urls: files.map(f => f.data),
-      status: "На проверке", comment: ""
-    }]);
-    setLoading(false);
-    if (error) { toast.error("Ошибка отправки"); return; }
-    toast.success("Документы отправлены!")
-    setFiles([]); setActiveTab("status"); loadApps(student.login);
-  };
+  if (!appForm.purpose.trim()) { toast.error("Укажите цель поездки"); return; }
+  if (!appForm.university_name.trim()) { toast.error("Укажите университет назначения"); return; }
+  if (!appForm.date_from || !appForm.date_to) { toast.error("Укажите сроки поездки"); return; }
+  if (files.length === 0) { toast.error("Прикрепите документы"); return; }
+
+  setLoading(true);
+  const { error } = await supabase.from("applications").insert([{
+    student_name: student.name,
+    student_login: student.login,
+    file_names: files.map(f => f.name),
+    file_urls: files.map(f => f.data),
+    purpose: appForm.purpose,
+    university_name: appForm.university_name,
+    date_from: appForm.date_from,
+    date_to: appForm.date_to,
+    status: "На проверке",
+    comment: ""
+  }]);
+  setLoading(false);
+  if (error) { toast.error("Ошибка отправки"); return; }
+  toast.success("Заявка отправлена!");
+  setFiles([]);
+  setAppForm({ purpose: "", university_name: "", date_from: "", date_to: "" });
+  setActiveTab("status");
+  loadApps(student.login);
+};
 
   const sendChat = async () => {
     if (!chatInput.trim() || chatLoading) return;
@@ -175,36 +191,69 @@ useEffect(() => {
         )}
 
         {/* ПОДАТЬ ДОКУМЕНТЫ */}
-        {activeTab === "submit" && (
-          <div style={{ maxWidth: '600px' }}>
-            <div style={{ background: 'white', borderRadius: '16px', padding: isMobile ? '20px 16px' : '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #e5e7eb' }}>
-              <h2 style={{ color: '#1e293b', marginBottom: '8px', fontSize: isMobile ? '17px' : '20px' }}>Загрузка документов</h2>
-              <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '20px' }}>Прикрепите файлы и отправьте в деканат</p>
-              <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '32px 16px', border: '2px dashed #cbd5e1', borderRadius: '12px', cursor: 'pointer', backgroundColor: '#f8fafc', marginBottom: '16px' }}>
-                <span style={{ fontSize: '36px' }}>📁</span>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ color: '#2563eb', fontWeight: '600', fontSize: '14px' }}>Нажмите чтобы выбрать файл</div>
-                  <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px' }}>PDF, DOCX, JPG и другие</div>
-                </div>
-                <input type="file" onChange={handleFile} style={{ display: 'none' }} />
-              </label>
-              {files.length > 0 && (
-                <div style={{ marginBottom: '16px' }}>
-                  {files.map((f, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', marginBottom: '8px' }}>
-                      <span style={{ color: '#0369a1', fontSize: '13px' }}>📄 {f.name}</span>
-                      <button onClick={() => setFiles(files.filter((_, idx) => idx !== i))} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer', fontSize: '20px' }}>×</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <button onClick={sendDoc} disabled={loading || files.length === 0}
-                style={{ width: '100%', padding: '14px', background: files.length === 0 ? '#94a3b8' : 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '15px', cursor: files.length === 0 ? 'not-allowed' : 'pointer' }}>
-                {loading ? "⏳ Отправляем..." : files.length === 0 ? "Сначала выберите файлы" : `📤 Отправить ${files.length} файл(а)`}
-              </button>
-            </div>
+{activeTab === "submit" && (
+  <div style={{ maxWidth: '600px' }}>
+    <div style={{ background: 'white', borderRadius: '16px', padding: isMobile ? '20px 16px' : '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #e5e7eb' }}>
+      <h2 style={{ color: '#1e293b', marginBottom: '8px', fontSize: isMobile ? '17px' : '20px' }}>Анкета заявки</h2>
+      <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '24px' }}>Заполните анкету и прикрепите документы</p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '20px' }}>
+        <div>
+          <label style={{ display: 'block', color: '#64748b', fontSize: '13px', marginBottom: '6px', fontWeight: '500' }}>🎯 Цель поездки</label>
+          <textarea value={appForm.purpose} onChange={e => setAppForm({...appForm, purpose: e.target.value})}
+            placeholder="Опишите цель академической мобильности..."
+            rows={3}
+            style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+        </div>
+
+        <div>
+          <label style={{ display: 'block', color: '#64748b', fontSize: '13px', marginBottom: '6px', fontWeight: '500' }}>🏫 Университет назначения</label>
+          <input value={appForm.university_name} onChange={e => setAppForm({...appForm, university_name: e.target.value})}
+            placeholder="Название университета"
+            style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div>
+            <label style={{ display: 'block', color: '#64748b', fontSize: '13px', marginBottom: '6px', fontWeight: '500' }}>📅 Дата начала</label>
+            <input type="date" value={appForm.date_from} onChange={e => setAppForm({...appForm, date_from: e.target.value})}
+              style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
           </div>
-        )}
+          <div>
+            <label style={{ display: 'block', color: '#64748b', fontSize: '13px', marginBottom: '6px', fontWeight: '500' }}>📅 Дата окончания</label>
+            <input type="date" value={appForm.date_to} onChange={e => setAppForm({...appForm, date_to: e.target.value})}
+              style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+        </div>
+      </div>
+
+      <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '24px 16px', border: '2px dashed #cbd5e1', borderRadius: '12px', cursor: 'pointer', backgroundColor: '#f8fafc', marginBottom: '16px' }}>
+        <span style={{ fontSize: '32px' }}>📁</span>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ color: '#2563eb', fontWeight: '600', fontSize: '14px' }}>Прикрепить документы</div>
+          <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px' }}>PDF, DOCX, JPG и другие</div>
+        </div>
+        <input type="file" onChange={handleFile} style={{ display: 'none' }} />
+      </label>
+
+      {files.length > 0 && (
+        <div style={{ marginBottom: '16px' }}>
+          {files.map((f, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', marginBottom: '8px' }}>
+              <span style={{ color: '#0369a1', fontSize: '13px' }}>📄 {f.name}</span>
+              <button onClick={() => setFiles(files.filter((_, idx) => idx !== i))} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer', fontSize: '20px' }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <button onClick={sendDoc} disabled={loading}
+        style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '15px', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
+        {loading ? "⏳ Отправляем..." : "📤 Отправить заявку"}
+      </button>
+    </div>
+  </div>
+)}
 
         {/* МОИ ЗАЯВКИ */}
         {activeTab === "status" && (
