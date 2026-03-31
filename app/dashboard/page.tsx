@@ -15,6 +15,11 @@ export default function StudentDashboard() {
   ]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+useEffect(() => {
+  chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+}, [chatMessages]);
   const [isMobile, setIsMobile] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: "", group_name: "" });
   const [profileLoading, setProfileLoading] = useState(false);
@@ -240,6 +245,7 @@ export default function StudentDashboard() {
                   </div>
                 ))}
                 {chatLoading && <div style={{ display: 'flex' }}><div style={{ padding: '10px 14px', background: '#f1f5f9', borderRadius: '18px 18px 18px 4px', color: '#64748b', fontSize: '14px' }}>⏳ Думаю...</div></div>}
+                <div ref={chatEndRef} />
               </div>
               <div style={{ padding: '12px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: '8px' }}>
                 <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} placeholder="Напишите вопрос..." style={{ flex: 1, padding: '11px 14px', border: '1px solid #e5e7eb', borderRadius: '12px', outline: 'none', fontSize: '14px', color: '#1e293b' }} />
