@@ -32,9 +32,34 @@ export default function AdminDashboard() {
   };
 
   const update = async (id: string, status: string, comment: string = "") => {
-    await supabase.from("applications").update({ status, comment }).eq("id", id);
-    setCommentId(null); setText(""); loadApps();
-  };
+  await supabase.from("applications").update({ status, comment }).eq("id", id);
+
+  // Находим email студента и отправляем уведомление
+  const app = apps.find(a => a.id === id);
+  if (app?.student_login) {
+    const { data: user } = await supabase
+      .from("users")
+      .select("email, name")
+      .eq("login", app.student_login)
+      .single();
+
+    if (user?.email) {
+      await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentEmail: user.email,
+          studentName: user.name,
+          status,
+          comment,
+        }),
+      });
+    }
+  }
+
+  setCommentId(null); setText(""); loadApps();
+};
+
 
   const filtered = filter === "все" ? apps : apps.filter(a => a.status === filter);
   const counts = {
