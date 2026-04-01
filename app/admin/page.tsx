@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import toast from "react-hot-toast";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [apps, setApps] = useState<any[]>([]);
@@ -32,34 +34,21 @@ export default function AdminDashboard() {
   };
 
   const update = async (id: string, status: string, comment: string = "") => {
-  await supabase.from("applications").update({ status, comment }).eq("id", id);
-
-  // Находим email студента и отправляем уведомление
-  const app = apps.find(a => a.id === id);
-  if (app?.student_login) {
-    const { data: user } = await supabase
-      .from("users")
-      .select("email, name")
-      .eq("login", app.student_login)
-      .single();
-
-    if (user?.email) {
-      await fetch("/api/notify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentEmail: user.email,
-          studentName: user.name,
-          status,
-          comment,
-        }),
-      });
+    await supabase.from("applications").update({ status, comment }).eq("id", id);
+    const app = apps.find(a => a.id === id);
+    if (app?.student_login) {
+      const { data: user } = await supabase.from("users").select("email, name").eq("login", app.student_login).single();
+      if (user?.email) {
+        await fetch("/api/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ studentEmail: user.email, studentName: user.name, status, comment }),
+        });
+      }
     }
-  }
-
-  setCommentId(null); setText(""); loadApps();
-};
-
+    toast.success(status === "Принято" ? "Заявка принята!" : "Ошибка отправлена студенту");
+    setCommentId(null); setText(""); loadApps();
+  };
 
   const filtered = filter === "все" ? apps : apps.filter(a => a.status === filter);
   const counts = {
@@ -68,6 +57,22 @@ export default function AdminDashboard() {
     "Принято": apps.filter(a => a.status === "Принято").length,
     "Ошибка": apps.filter(a => a.status === "Ошибка").length,
   };
+
+  const pieData = [
+    { name: 'На проверке', value: counts['На проверке'] },
+    { name: 'Принято', value: counts['Принято'] },
+    { name: 'Ошибка', value: counts['Ошибка'] },
+  ].filter(d => d.value > 0);
+
+  const barData = Object.entries(
+    apps.reduce((acc: any, app) => {
+      if (app.university_name) {
+        const key = app.university_name.length > 15 ? app.university_name.slice(0, 15) + '...' : app.university_name;
+        acc[key] = (acc[key] || 0) + 1;
+      }
+      return acc;
+    }, {})
+  ).map(([name, value]) => ({ name, value })).sort((a: any, b: any) => b.value - a.value).slice(0, 5);
 
   const statusColor = (s: string) => s === 'Принято' ? '#22c55e' : s === 'Ошибка' ? '#ef4444' : '#f59e0b';
   const statusBg = (s: string) => s === 'Принято' ? '#dcfce7' : s === 'Ошибка' ? '#fee2e2' : '#fef9c3';
@@ -94,7 +99,7 @@ export default function AdminDashboard() {
       </div>
 
       <div style={{ padding: isMobile ? '16px' : '28px 32px' }}>
-        {/* Статистика */}
+        {/* Карточки статистики */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
           {[
             { label: 'Всего', value: counts['все'], color: '#2563eb', icon: '📋' },
@@ -112,6 +117,43 @@ export default function AdminDashboard() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Графики */}
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+          <div style={{ background: 'white', borderRadius: '14px', padding: '20px', border: '1px solid #e5e7eb', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+            <h3 style={{ color: '#1e293b', fontSize: '15px', fontWeight: '600', margin: '0 0 16px 0' }}>📊 По статусам</h3>
+            {pieData.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '30px', fontSize: '13px' }}>Нет данных</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={pieData} cx="50%" cy="50%" outerRadius={75} dataKey="value" label={({ name, value }) => `${name}: ${value}`} labelLine={false}>
+                    <Cell fill="#f59e0b" />
+                    <Cell fill="#22c55e" />
+                    <Cell fill="#ef4444" />
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          <div style={{ background: 'white', borderRadius: '14px', padding: '20px', border: '1px solid #e5e7eb', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+            <h3 style={{ color: '#1e293b', fontSize: '15px', fontWeight: '600', margin: '0 0 16px 0' }}>🏫 Популярные университеты</h3>
+            {barData.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '30px', fontSize: '13px' }}>Нет данных</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={barData}>
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#2563eb" radius={[6, 6, 0, 0]} name="Заявок" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
         </div>
 
         {/* Фильтры */}
@@ -133,8 +175,6 @@ export default function AdminDashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {filtered.map(app => (
               <div key={app.id} style={{ background: 'white', borderRadius: '14px', padding: isMobile ? '16px' : '20px 24px', border: '1px solid #e5e7eb', borderLeft: `5px solid ${statusColor(app.status)}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-
-                {/* Верхняя часть — студент + статус */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
                   <div style={{ width: '40px', height: '40px', background: 'linear-gradient(135deg, #2563eb, #7c3aed)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '700', fontSize: '16px', flexShrink: 0 }}>
                     {app.student_name?.[0]}
@@ -148,35 +188,21 @@ export default function AdminDashboard() {
                   </span>
                 </div>
 
-                {/* Детали заявки */}
-{(app.purpose || app.university_name || app.date_from) && (
-  <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-    {app.university_name && (
-      <div style={{ fontSize: '13px', color: '#1e293b' }}>
-        🏫 <strong>Университет:</strong> {app.university_name}
-      </div>
-    )}
-    {app.date_from && app.date_to && (
-      <div style={{ fontSize: '13px', color: '#1e293b' }}>
-        📅 <strong>Сроки:</strong> {new Date(app.date_from).toLocaleDateString('ru-RU')} — {new Date(app.date_to).toLocaleDateString('ru-RU')}
-      </div>
-    )}
-    {app.purpose && (
-      <div style={{ fontSize: '13px', color: '#1e293b' }}>
-        🎯 <strong>Цель:</strong> {app.purpose}
-      </div>
-    )}
-  </div>
-)}
+                {(app.purpose || app.university_name || app.date_from) && (
+                  <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {app.university_name && <div style={{ fontSize: '13px', color: '#1e293b' }}>🏫 <strong>Университет:</strong> {app.university_name}</div>}
+                    {app.date_from && app.date_to && <div style={{ fontSize: '13px', color: '#1e293b' }}>📅 <strong>Сроки:</strong> {new Date(app.date_from).toLocaleDateString('ru-RU')} — {new Date(app.date_to).toLocaleDateString('ru-RU')}</div>}
+                    {app.purpose && <div style={{ fontSize: '13px', color: '#1e293b' }}>🎯 <strong>Цель:</strong> {app.purpose}</div>}
+                  </div>
+                )}
 
-{/* Файлы */}
-<div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
-  {app.file_names?.map((name: string, i: number) => (
-    <a key={i} href={app.file_urls[i]} download={name} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', color: '#0369a1', fontSize: '12px', textDecoration: 'none' }}>
-      💾 {name}
-    </a>
-  ))}
-</div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                  {app.file_names?.map((name: string, i: number) => (
+                    <a key={i} href={app.file_urls[i]} download={name} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', color: '#0369a1', fontSize: '12px', textDecoration: 'none' }}>
+                      💾 {name}
+                    </a>
+                  ))}
+                </div>
 
                 {app.comment && (
                   <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#fef2f2', borderRadius: '8px', color: '#dc2626', fontSize: '13px' }}>
@@ -184,7 +210,6 @@ export default function AdminDashboard() {
                   </div>
                 )}
 
-                {/* Действия */}
                 {commentId === app.id ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <input value={text} onChange={e => setText(e.target.value)} placeholder="Причина ошибки..."
