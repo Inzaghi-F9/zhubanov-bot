@@ -33,7 +33,7 @@ export async function POST(req: Request) {
               ? '<p style="color: #64748b;">Поздравляем! Ваши документы приняты. Ожидайте дальнейших инструкций.</p>'
               : '<p style="color: #64748b;">Пожалуйста, исправьте ошибку и подайте документы повторно.</p>'
             }
-            <a href="https://zhubano-bot.netlify.app/dashboard" 
+            <a href="https://zhubanov-bot-829u.vercel.app/dashboard" 
               style="display: inline-block; margin-top: 20px; padding: 12px 24px; background: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">
               Перейти в личный кабинет
             </a>

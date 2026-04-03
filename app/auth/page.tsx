@@ -83,7 +83,7 @@ export default function AuthPage() {
       } else if (mode === "reset") {
         // Сброс пароля
         const { error } = await supabase.auth.resetPasswordForEmail(formData.email, {
-          redirectTo: "https://zhubano-bot.netlify.app/auth/reset",
+          redirectTo: "https://zhubanov-bot-829u.vercel.app/auth/reset",
         });
 
         if (error) { toast.error("Ошибка: " + error.message); return; }
