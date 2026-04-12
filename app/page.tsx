@@ -1,213 +1,230 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
-import { MessageSquare, Plus, Trash2, Send, Moon, Sun, Menu, Edit2, Mic, MicOff } from "lucide-react";
-import toast from "react-hot-toast";
-interface Message { role: string; content: string; }
-interface Chat { id: string; title: string; messages: Message[]; }
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
-export default function Home() {
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [currentChatId, setCurrentChatId] = useState<string>("");
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
-  const [isSidebarOpen, setSidebarOpen] = useState(true);
-  const [isListening, setIsListening] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+export default function LandingPage() {
+  const router = useRouter();
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
 
-  useEffect(() => {
-    const saved = localStorage.getItem("zhubanov_chats");
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setChats(parsed);
-      if (parsed.length > 0) setCurrentChatId(parsed[0].id);
-    } else {
-      createNewChat();
-    }
-  }, []);
+  const partners = [
+    { name: "Московский государственный университет", country: "🇷🇺 Россия" },
+    { name: "Санкт-Петербургский политехнический университет", country: "🇷🇺 Россия" },
+    { name: "Национальный университет Узбекистана", country: "🇺🇿 Узбекистан" },
+    { name: "Кыргызский национальный университет", country: "🇰🇬 Кыргызстан" },
+    { name: "Белорусский государственный университет", country: "🇧🇾 Беларусь" },
+    { name: "Томский политехнический университет", country: "🇷🇺 Россия" },
+    { name: "Университет КИМЭП", country: "🇰🇿 Казахстан" },
+    { name: "Евразийский национальный университет", country: "🇰🇿 Казахстан" },
+  ];
 
-  useEffect(() => {
-    if (chats.length > 0) localStorage.setItem("zhubanov_chats", JSON.stringify(chats));
-  }, [chats]);
+  const faqs = [
+    { q: "Кто может подать заявку на академическую мобильность?", a: "Студенты очной формы обучения, завершившие минимум один семестр, со средним баллом не ниже 3.0 и отсутствием академических задолженностей." },
+    { q: "Какие документы нужны для подачи заявки?", a: "Паспорт, академическая справка, транскрипт оценок, мотивационное письмо, рекомендательное письмо от научного руководителя." },
+    { q: "Сколько длится программа мобильности?", a: "Обычно один академический семестр — от 3 до 6 месяцев. Максимальный срок — 12 месяцев." },
+    { q: "Покрываются ли расходы на обучение?", a: "Обучение в принимающем университете, как правило, бесплатное. Расходы на проживание и переезд студент покрывает самостоятельно или за счёт грантов." },
+    { q: "Как отслеживать статус заявки?", a: "После регистрации на платформе вы можете в любое время войти в личный кабинет и проверить текущий статус вашей заявки. Также вы получите email-уведомление при каждом изменении статуса." },
+    { q: "Что такое шорт-лист факультета?", a: "После проверки документов факультет формирует список рекомендованных кандидатов. Если вы в шорт-листе, ваша заявка передаётся в департамент для финального рассмотрения." },
+  ];
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
-  }, [currentChatId, chats]);
-
-  const createNewChat = () => {
-    const newId = Date.now().toString();
-    const newChat = { id: newId, title: "Новый чат", messages: [{ role: "assistant", content: "Сәлеметсіз бе! Чем могу помочь?" }] };
-    setChats([newChat, ...chats]);
-    setCurrentChatId(newId);
-  };
-
-  const startSpeechRecognition = () => {
-    if (typeof window === "undefined") return;
-  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-  
-  if (!SpeechRecognition) {
-    toast.error("Браузер не поддерживает голос.");
-    return;
-  }
-
-  const recognition = new SpeechRecognition();
-  recognition.lang = 'ru-RU';
-  recognition.continuous = false; // Отключаем постоянное слушание для стабильности
-  recognition.interimResults = false;
-
-  recognition.onstart = () => {
-    setIsListening(true);
-    console.log("Запись пошла...");
-  };
-
-  recognition.onresult = (event: any) => {
-    const transcript = event.results[0][0].transcript;
-    setInput(prev => prev + (prev ? " " : "") + transcript);
-    setIsListening(false); // Выключаем сразу после получения результата
-  };
-
-  recognition.onerror = (event: any) => {
-    setIsListening(false);
-    console.error("Ошибка API:", event.error);
-    
-    // Вместо пугающих алертов просто пишем в консоль или даем тихую подсказку
-    if (event.error === 'network') {
-      console.warn("Сетевая заминка. Попробуйте нажать еще раз.");
-    }
-  };
-
-  recognition.onend = () => {
-    setIsListening(false);
-  };
-
-  try {
-    recognition.start();
-  } catch (err) {
-    console.error("Критическая ошибка старта:", err);
-    setIsListening(false);
-  }
-};
-
-  const deleteChat = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const filtered = chats.filter(c => c.id !== id);
-    setChats(filtered);
-    if (currentChatId === id && filtered.length > 0) setCurrentChatId(filtered[0].id);
-    else if (filtered.length === 0) createNewChat();
-  };
-
-  const renameChat = (id: string) => {
-    const newTitle = prompt("Введите название чата:");
-    if (newTitle) setChats(chats.map(c => c.id === id ? { ...c, title: newTitle } : c));
-  };
-
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return;
-    const currentChat = chats.find(c => c.id === currentChatId);
-    if (!currentChat) return;
-
-    const userMsg = { role: "user", content: input };
-    const updatedMessages = [...currentChat.messages, userMsg];
-    
-    let newTitle = currentChat.title;
-    if (currentChat.messages.length === 1) newTitle = input.slice(0, 30);
-
-    setChats(chats.map(c => c.id === currentChatId ? { ...c, messages: updatedMessages, title: newTitle } : c));
-    setInput("");
-    setLoading(true);
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        body: JSON.stringify({ messages: updatedMessages }),
-      });
-      const data = await res.json();
-      setChats(prev => prev.map(c => c.id === currentChatId ? { ...c, messages: [...updatedMessages, { role: "assistant", content: data.text }] } : c));
-    } catch (e) {
-      toast.error("Ошибка сети");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const currentChat = chats.find(c => c.id === currentChatId) || chats[0] || { messages: [] };
+  const steps = [
+    { num: "01", title: "Регистрация", desc: "Создайте аккаунт на платформе и заполните профиль студента", icon: "👤" },
+    { num: "02", title: "Подача заявки", desc: "Заполните анкету и загрузите необходимые документы онлайн", icon: "📤" },
+    { num: "03", title: "Проверка факультетом", desc: "Факультет проверяет документы и формирует список кандидатов", icon: "🏛️" },
+    { num: "04", title: "Рассмотрение департаментом", desc: "Департамент проводит тестирование и интервью с кандидатами", icon: "🎓" },
+    { num: "05", title: "Решение", desc: "Вы получаете уведомление о результатах на email", icon: "✅" },
+  ];
 
   return (
-    <div className={`flex h-screen ${darkMode ? "bg-[#171717] text-white" : "bg-white text-black"}`}>
-      {/* Инъекция стиля для скрытия скроллбара */}
-      <style dangerouslySetInnerHTML={{__html: `
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}} />
+    <div style={{ fontFamily: "'Inter', sans-serif", color: '#1e293b' }}>
 
-      {/* Sidebar */}
-      <div className={`${isSidebarOpen ? "w-64" : "w-0"} overflow-hidden transition-all bg-[#202123] text-gray-200 flex flex-col`}>
-        <button onClick={createNewChat} className="m-3 p-3 border border-gray-600 rounded-md flex items-center gap-3 hover:bg-gray-700 transition">
-          <Plus size={16} /> Новый чат
-        </button>
-        <div className="flex-1 overflow-y-auto px-3 no-scrollbar">
-          {chats.map(chat => (
-            <div key={chat.id} onClick={() => setCurrentChatId(chat.id)} className={`p-3 mb-1 rounded-md flex items-center gap-3 cursor-pointer group ${currentChatId === chat.id ? "bg-gray-800" : "hover:bg-gray-800"}`}>
-              <MessageSquare size={16} />
-              <span className="flex-1 truncate text-sm">{chat.title}</span>
-              <div className="hidden group-hover:flex gap-1">
-                <Edit2 size={14} onClick={() => renameChat(chat.id)} className="hover:text-white" />
-                <Trash2 size={14} onClick={(e) => deleteChat(chat.id, e)} className="hover:text-red-400" />
-              </div>
-            </div>
-          ))}
+      {/* Навигация */}
+      <nav style={{ position: 'sticky', top: 0, zIndex: 100, background: 'white', borderBottom: '1px solid #e5e7eb', padding: '0 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '64px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '24px' }}>🎓</span>
+          <div>
+            <div style={{ fontWeight: '700', fontSize: '16px', color: '#1e293b' }}>ARSU Mobility</div>
+            <div style={{ fontSize: '11px', color: '#64748b' }}>Университет им. К. Жубанова</div>
+          </div>
         </div>
-        <button onClick={() => setDarkMode(!darkMode)} className="p-4 hover:bg-gray-800 flex items-center gap-3 border-t border-gray-700">
-          {darkMode ? <Sun size={18} /> : <Moon size={18} />} {darkMode ? "Светлая тема" : "Темная тема"}
-        </button>
-      </div>
-
-      {/* Main */}
-      <div className="flex-1 flex flex-col relative bg-inherit">
-        <header className="p-4 flex items-center border-b border-gray-200 dark:border-gray-700">
-  <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md">
-    <Menu size={20} />
-  </button>
-  <h2 className="ml-4 font-semibold truncate">{currentChat?.title}</h2>
-</header>
-
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:px-20 space-y-6 no-scrollbar">
-          {currentChat?.messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] md:max-w-2xl p-4 rounded-2xl shadow-sm ${
-                m.role === "user" ? "bg-blue-600 text-white" : "bg-white dark:bg-[#2f2f2f] text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700"
-              }`}>
-                <p className="text-sm md:text-base whitespace-pre-wrap">{m.content}</p>
-              </div>
-            </div>
-          ))}
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <a href="#about" style={{ color: '#64748b', textDecoration: 'none', fontSize: '14px' }}>О программе</a>
+          <a href="#steps" style={{ color: '#64748b', textDecoration: 'none', fontSize: '14px' }}>Как подать</a>
+          <a href="#partners" style={{ color: '#64748b', textDecoration: 'none', fontSize: '14px' }}>Партнёры</a>
+          <a href="#faq" style={{ color: '#64748b', textDecoration: 'none', fontSize: '14px' }}>FAQ</a>
+          <button onClick={() => router.push('/auth')}
+            style={{ padding: '9px 20px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '14px' }}>
+            Войти
+          </button>
         </div>
+      </nav>
 
-        <div className="p-4 md:px-20 border-t border-gray-200 dark:border-gray-700">
-          <div className="relative flex items-end bg-white dark:bg-[#2f2f2f] border border-gray-300 dark:border-gray-600 rounded-2xl p-2 shadow-sm">
-            <button 
-              onClick={startSpeechRecognition}
-              className={`p-2 transition rounded-full ${isListening ? "text-red-500 animate-pulse" : "text-gray-500 hover:text-blue-500"}`}
-            >
-              {isListening ? <MicOff size={20} /> : <Mic size={20} />}
+      {/* Герой */}
+      <section style={{ background: 'linear-gradient(135deg, #1e3a5f 0%, #2563eb 60%, #0d9488 100%)', padding: '80px 32px', textAlign: 'center', color: 'white' }}>
+        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+          <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.15)', padding: '6px 16px', borderRadius: '20px', fontSize: '13px', marginBottom: '24px' }}>
+            🌍 Программа академической мобильности
+          </div>
+          <h1 style={{ fontSize: '48px', fontWeight: '800', margin: '0 0 20px 0', lineHeight: 1.2 }}>
+            Учись за рубежом с <span style={{ color: '#7dd3fc' }}>ARSU Mobility</span>
+          </h1>
+          <p style={{ fontSize: '18px', color: 'rgba(255,255,255,0.85)', margin: '0 0 36px 0', lineHeight: 1.6 }}>
+            Цифровая платформа для подачи заявок на академическую мобильность университета им. К. Жубанова. Подайте заявку онлайн и отслеживайте её статус в реальном времени.
+          </p>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button onClick={() => router.push('/auth')}
+              style={{ padding: '14px 32px', background: 'white', color: '#2563eb', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '16px' }}>
+              Подать заявку →
             </button>
+            <a href="#about"
+              style={{ padding: '14px 32px', background: 'rgba(255,255,255,0.15)', color: 'white', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '10px', cursor: 'pointer', fontWeight: '600', fontSize: '16px', textDecoration: 'none', display: 'inline-block' }}>
+              Узнать больше
+            </a>
+          </div>
+        </div>
+      </section>
 
-            <textarea
-              rows={1}
-              className="flex-1 bg-transparent p-2 outline-none resize-none max-h-40 overflow-y-auto no-scrollbar text-gray-900 dark:text-white placeholder-gray-500"
-              placeholder={isListening ? "Слушаю..." : "Спросите что-нибудь..."}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-            />
-            
-            <button onClick={sendMessage} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50" disabled={loading}>
-              <Send size={18} />
+      {/* Статистика */}
+      <section style={{ background: 'white', padding: '40px 32px', borderBottom: '1px solid #e5e7eb' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', textAlign: 'center' }}>
+          {[
+            { num: '8+', label: 'Университетов-партнёров' },
+            { num: '5', label: 'Этапов отбора' },
+            { num: '3', label: 'Роли пользователей' },
+            { num: '24/7', label: 'ИИ-ассистент' },
+          ].map(s => (
+            <div key={s.label}>
+              <div style={{ fontSize: '36px', fontWeight: '800', color: '#2563eb' }}>{s.num}</div>
+              <div style={{ color: '#64748b', fontSize: '14px', marginTop: '4px' }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* О программе */}
+      <section id="about" style={{ padding: '80px 32px', background: '#f8fafc' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <h2 style={{ fontSize: '36px', fontWeight: '800', textAlign: 'center', marginBottom: '16px' }}>О программе мобильности</h2>
+          <p style={{ color: '#64748b', textAlign: 'center', fontSize: '16px', marginBottom: '48px', maxWidth: '600px', margin: '0 auto 48px' }}>
+            Академическая мобильность — это возможность пройти обучение в ведущих университетах Казахстана и зарубежья
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+            {[
+              { icon: '🌍', title: 'Международный опыт', desc: 'Обучайтесь в университетах России, Беларуси, Кыргызстана, Узбекистана и других стран' },
+              { icon: '📜', title: 'Перезачёт кредитов', desc: 'Все освоенные предметы перезачитываются в вашем университете по возвращении' },
+              { icon: '🤖', title: 'ИИ-ассистент', desc: 'Получайте мгновенные ответы на вопросы о программе через встроенный чат-бот' },
+              { icon: '📱', title: 'Онлайн заявка', desc: 'Подавайте документы и отслеживайте статус заявки не выходя из дома' },
+              { icon: '🔔', title: 'Уведомления', desc: 'Получайте email-уведомления при каждом изменении статуса вашей заявки' },
+              { icon: '🏆', title: 'Прозрачный отбор', desc: 'Многоэтапная система: факультет → департамент → финальное решение' },
+            ].map(card => (
+              <div key={card.title} style={{ background: 'white', borderRadius: '14px', padding: '24px', border: '1px solid #e5e7eb', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                <div style={{ fontSize: '32px', marginBottom: '12px' }}>{card.icon}</div>
+                <h3 style={{ fontWeight: '700', marginBottom: '8px', fontSize: '16px' }}>{card.title}</h3>
+                <p style={{ color: '#64748b', fontSize: '14px', lineHeight: '1.6', margin: 0 }}>{card.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Шаги */}
+      <section id="steps" style={{ padding: '80px 32px', background: 'white' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <h2 style={{ fontSize: '36px', fontWeight: '800', textAlign: 'center', marginBottom: '48px' }}>Как подать заявку</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {steps.map((step, i) => (
+              <div key={i} style={{ display: 'flex', gap: '20px', alignItems: 'flex-start', padding: '24px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e5e7eb' }}>
+                <div style={{ width: '48px', height: '48px', background: 'linear-gradient(135deg, #2563eb, #0d9488)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', flexShrink: 0 }}>
+                  {step.icon}
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: '#2563eb', fontWeight: '600', marginBottom: '4px' }}>ШАГ {step.num}</div>
+                  <h3 style={{ fontWeight: '700', fontSize: '16px', margin: '0 0 6px 0' }}>{step.title}</h3>
+                  <p style={{ color: '#64748b', fontSize: '14px', margin: 0 }}>{step.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ textAlign: 'center', marginTop: '40px' }}>
+            <button onClick={() => router.push('/auth')}
+              style={{ padding: '14px 36px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '16px' }}>
+              Начать → Подать заявку
             </button>
           </div>
-          <p className="text-[10px] text-center text-gray-400 mt-2">Shift + Enter — новая строка</p>
         </div>
-      </div>
+      </section>
+
+      {/* Партнёры */}
+      <section id="partners" style={{ padding: '80px 32px', background: '#f8fafc' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+          <h2 style={{ fontSize: '36px', fontWeight: '800', textAlign: 'center', marginBottom: '12px' }}>Университеты-партнёры</h2>
+          <p style={{ color: '#64748b', textAlign: 'center', fontSize: '16px', marginBottom: '40px' }}>Куда вы можете поехать по программе мобильности</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px' }}>
+            {partners.map((p, i) => (
+              <div key={i} style={{ background: 'white', borderRadius: '12px', padding: '18px 20px', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                <div style={{ fontSize: '28px' }}>{p.country.split(' ')[0]}</div>
+                <div>
+                  <div style={{ fontWeight: '600', fontSize: '14px', color: '#1e293b' }}>{p.name}</div>
+                  <div style={{ color: '#64748b', fontSize: '12px', marginTop: '2px' }}>{p.country.split(' ').slice(1).join(' ')}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" style={{ padding: '80px 32px', background: 'white' }}>
+        <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+          <h2 style={{ fontSize: '36px', fontWeight: '800', textAlign: 'center', marginBottom: '12px' }}>Частые вопросы</h2>
+          <p style={{ color: '#64748b', textAlign: 'center', marginBottom: '40px' }}>Не нашли ответ? Спросите у нашего ИИ-ассистента в личном кабинете</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {faqs.map((faq, i) => (
+              <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
+                <button onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                  style={{ width: '100%', padding: '18px 20px', background: openFaq === i ? '#f0f9ff' : 'white', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', textAlign: 'left' }}>
+                  <span style={{ fontWeight: '600', fontSize: '15px', color: '#1e293b' }}>{faq.q}</span>
+                  <span style={{ fontSize: '20px', color: '#2563eb', flexShrink: 0, marginLeft: '12px' }}>{openFaq === i ? '−' : '+'}</span>
+                </button>
+                {openFaq === i && (
+                  <div style={{ padding: '0 20px 18px', color: '#64748b', fontSize: '14px', lineHeight: '1.7', borderTop: '1px solid #e5e7eb', background: '#f0f9ff' }}>
+                    {faq.a}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Контакты */}
+      <section id="contacts" style={{ padding: '80px 32px', background: 'linear-gradient(135deg, #1e3a5f, #2563eb)' }}>
+        <div style={{ maxWidth: '700px', margin: '0 auto', textAlign: 'center', color: 'white' }}>
+          <h2 style={{ fontSize: '36px', fontWeight: '800', marginBottom: '16px' }}>Свяжитесь с нами</h2>
+          <p style={{ color: 'rgba(255,255,255,0.8)', marginBottom: '40px', fontSize: '16px' }}>Если у вас остались вопросы — мы готовы помочь</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '40px' }}>
+            {[
+              { icon: '📍', title: 'Адрес', value: 'г. Актобе, пр. А. Молдагуловой, 34' },
+              { icon: '📞', title: 'Телефон', value: '+7 (7132) 54-19-79' },
+              { icon: '✉️', title: 'Email', value: 'mobility@zhubanov.edu.kz' },
+            ].map(c => (
+              <div key={c.title} style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '12px', padding: '20px', border: '1px solid rgba(255,255,255,0.2)' }}>
+                <div style={{ fontSize: '28px', marginBottom: '8px' }}>{c.icon}</div>
+                <div style={{ fontWeight: '600', marginBottom: '4px' }}>{c.title}</div>
+                <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px' }}>{c.value}</div>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => router.push('/auth')}
+            style={{ padding: '14px 36px', background: 'white', color: '#2563eb', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: '700', fontSize: '16px' }}>
+            Подать заявку сейчас →
+          </button>
+        </div>
+      </section>
+
+      {/* Футер */}
+      <footer style={{ background: '#0f172a', padding: '24px 32px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+        © 2026 ARSU Mobility — Университет им. К. Жубанова. Все права защищены.
+      </footer>
     </div>
   );
 }
