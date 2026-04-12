@@ -14,21 +14,23 @@ export default function AuthPage() {
     setLoading(true);
     try {
       if (mode === "login") {
-        // Проверяем сначала — не админ ли это (старая система)
-        const { data: adminData } = await supabase
-          .from("users")
-          .select("*")
-          .eq("login", formData.email)
-          .eq("password", formData.password)
-          .eq("role", "admin")
-          .single();
+        // Проверяем сначала — не админ или факультет ли это (старая система)
+const { data: staffData } = await supabase
+  .from("users")
+  .select("*")
+  .eq("login", formData.email)
+  .eq("password", formData.password)
+  .in("role", ["admin", "faculty"])
+  .single();
 
-        if (adminData) {
-          localStorage.setItem("current_session", JSON.stringify(adminData));
-          router.push("/admin");
-          return;
-        }
+if (staffData) {
+  localStorage.setItem("current_session", JSON.stringify(staffData));
+  if (staffData.role === "admin") router.push("/admin");
+  else if (staffData.role === "faculty") router.push("/faculty");
+  return;
+}
 
+        
         // Обычный вход через Supabase Auth
         const { data, error } = await supabase.auth.signInWithPassword({
           email: formData.email,
