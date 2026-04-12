@@ -100,7 +100,7 @@ useEffect(() => {
     university_name: appForm.university_name,
     date_from: appForm.date_from,
     date_to: appForm.date_to,
-    status: "На проверке",
+    status: "На проверке (факультет)",
     comment: ""
   }]);
   setLoading(false);
@@ -135,9 +135,27 @@ useEffect(() => {
     { id: "profile", icon: "👤", label: "Профиль" },
   ];
 
-  const statusColor = (s: string) => s === 'Принято' ? '#22c55e' : s === 'Ошибка' ? '#ef4444' : '#f59e0b';
-  const statusBg = (s: string) => s === 'Принято' ? '#dcfce7' : s === 'Ошибка' ? '#fee2e2' : '#fef9c3';
-  const statusText = (s: string) => s === 'Принято' ? '#16a34a' : s === 'Ошибка' ? '#dc2626' : '#ca8a04';
+  const statusColor = (s: string) => {
+  if (s === 'Принято') return '#22c55e';
+  if (s === 'Ошибка' || s === 'Отклонён факультетом') return '#ef4444';
+  if (s === 'Рекомендован факультетом') return '#0d9488';
+  if (s === 'Приглашены на тестирование' || s === 'Приглашены на интервью') return '#7c3aed';
+  return '#f59e0b';
+};
+const statusBg = (s: string) => {
+  if (s === 'Принято') return '#dcfce7';
+  if (s === 'Ошибка' || s === 'Отклонён факультетом') return '#fee2e2';
+  if (s === 'Рекомендован факультетом') return '#ccfbf1';
+  if (s === 'Приглашены на тестирование' || s === 'Приглашены на интервью') return '#ede9fe';
+  return '#fef9c3';
+};
+const statusText = (s: string) => {
+  if (s === 'Принято') return '#16a34a';
+  if (s === 'Ошибка' || s === 'Отклонён факультетом') return '#dc2626';
+  if (s === 'Рекомендован факультетом') return '#0f766e';
+  if (s === 'Приглашены на тестирование' || s === 'Приглашены на интервью') return '#6d28d9';
+  return '#ca8a04';
+};
 
   const Avatar = ({ size = 56 }: { size?: number }) => (
     <div style={{ width: size, height: size, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

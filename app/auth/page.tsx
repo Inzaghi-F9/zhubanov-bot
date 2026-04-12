@@ -46,7 +46,8 @@ export default function AuthPage() {
 
         if (profile) {
           localStorage.setItem("current_session", JSON.stringify({ ...profile, supabase_id: data.user.id }));
-          router.push("/dashboard");
+          if (profile.role === "faculty") router.push("/faculty");
+else router.push("/dashboard");
         } else {
           toast.error("Профиль не найден. Обратитесь к администратору.");
         }

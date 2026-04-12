@@ -29,9 +29,20 @@ export default function AdminDashboard() {
   }, []);
 
   const loadApps = async () => {
-    const { data } = await supabase.from("applications").select("*").order("created_at", { ascending: false });
-    if (data) setApps(data);
-  };
+  const { data } = await supabase
+    .from("applications")
+    .select("*")
+    .in("status", [
+      "Рекомендован факультетом",
+      "На рассмотрении (департамент)",
+      "Приглашены на тестирование",
+      "Приглашены на интервью",
+      "Принято",
+      "Ошибка"
+    ])
+    .order("created_at", { ascending: false });
+  if (data) setApps(data);
+};
 
   const update = async (id: string, status: string, comment: string = "") => {
     await supabase.from("applications").update({ status, comment }).eq("id", id);
@@ -220,10 +231,24 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => update(app.id, "Принято")} style={{ flex: 1, background: '#22c55e', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>✓ Принять</button>
-                    <button onClick={() => setCommentId(app.id)} style={{ flex: 1, background: '#f59e0b', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>✗ Ошибка</button>
-                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+  <button onClick={() => update(app.id, "Принято")}
+    style={{ flex: 1, background: '#22c55e', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
+    ✓ Принять
+  </button>
+  <button onClick={() => update(app.id, "Приглашены на тестирование")}
+    style={{ flex: 1, background: '#7c3aed', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
+    📝 Тестирование
+  </button>
+  <button onClick={() => update(app.id, "Приглашены на интервью")}
+    style={{ flex: 1, background: '#2563eb', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
+    🎤 Интервью
+  </button>
+  <button onClick={() => setCommentId(app.id)}
+    style={{ flex: 1, background: '#f59e0b', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
+    ✗ Ошибка
+  </button>
+</div>
                 )}
               </div>
             ))}
