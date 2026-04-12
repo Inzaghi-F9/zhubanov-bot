@@ -10,6 +10,11 @@ export default function AdminDashboard() {
   const [apps, setApps] = useState<any[]>([]);
   const [commentId, setCommentId] = useState<string | null>(null);
   const [text, setText] = useState("");
+  const [scheduleId, setScheduleId] = useState<string | null>(null);
+const [scheduleType, setScheduleType] = useState<"test" | "interview" | null>(null);
+const [scheduleDate, setScheduleDate] = useState("");
+const [scheduleTime, setScheduleTime] = useState("");
+const [scheduleLocation, setScheduleLocation] = useState("");
   const [filter, setFilter] = useState("все");
   const [isMobile, setIsMobile] = useState(false);
 
@@ -60,6 +65,31 @@ export default function AdminDashboard() {
     toast.success(status === "Принято" ? "Заявка принята!" : "Ошибка отправлена студенту");
     setCommentId(null); setText(""); loadApps();
   };
+  const scheduleEvent = async (id: string) => {
+  if (!scheduleDate || !scheduleTime) { toast.error("Укажите дату и время"); return; }
+  const status = scheduleType === "test" ? "Приглашены на тестирование" : "Приглашены на интервью";
+  const dateStr = new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const comment = `Дата: ${dateStr}${scheduleLocation ? `. Место: ${scheduleLocation}` : ''}`;
+
+  await supabase.from("applications").update({ status, comment }).eq("id", id);
+
+  const app = apps.find(a => a.id === id);
+  if (app?.student_login) {
+    const { data: user } = await supabase.from("users").select("email, name").eq("login", app.student_login).single();
+    if (user?.email) {
+      await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentEmail: user.email, studentName: user.name, status, comment }),
+      });
+    }
+  }
+
+  toast.success(`${scheduleType === "test" ? "Тестирование" : "Интервью"} назначено!`);
+  setScheduleId(null); setScheduleType(null);
+  setScheduleDate(""); setScheduleTime(""); setScheduleLocation("");
+  loadApps();
+};
 
   const filtered = filter === "все" ? apps : apps.filter(a => a.status === filter);
   const counts = {
@@ -222,34 +252,70 @@ export default function AdminDashboard() {
                 )}
 
                 {commentId === app.id ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <input value={text} onChange={e => setText(e.target.value)} placeholder="Причина ошибки..."
-                      style={{ padding: '10px 12px', border: '1px solid #fca5a5', borderRadius: '8px', color: '#1e293b', fontSize: '13px', outline: 'none', width: '100%', boxSizing: 'border-box' }} />
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={() => update(app.id, "Ошибка", text)} style={{ flex: 1, background: '#ef4444', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>Отправить</button>
-                      <button onClick={() => setCommentId(null)} style={{ flex: 1, background: '#e2e8f0', color: '#64748b', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>Отмена</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-  <button onClick={() => update(app.id, "Принято")}
-    style={{ flex: 1, background: '#22c55e', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
-    ✓ Принять
-  </button>
-  <button onClick={() => update(app.id, "Приглашены на тестирование")}
-    style={{ flex: 1, background: '#7c3aed', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
-    📝 Тестирование
-  </button>
-  <button onClick={() => update(app.id, "Приглашены на интервью")}
-    style={{ flex: 1, background: '#2563eb', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
-    🎤 Интервью
-  </button>
-  <button onClick={() => setCommentId(app.id)}
-    style={{ flex: 1, background: '#f59e0b', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
-    ✗ Ошибка
-  </button>
-</div>
-                )}
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+    <input value={text} onChange={e => setText(e.target.value)} placeholder="Причина ошибки..."
+      style={{ padding: '10px 12px', border: '1px solid #fca5a5', borderRadius: '8px', color: '#1e293b', fontSize: '13px', outline: 'none', width: '100%', boxSizing: 'border-box' }} />
+    <div style={{ display: 'flex', gap: '8px' }}>
+      <button onClick={() => update(app.id, "Ошибка", text)} style={{ flex: 1, background: '#ef4444', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>Отправить</button>
+      <button onClick={() => setCommentId(null)} style={{ flex: 1, background: '#e2e8f0', color: '#64748b', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>Отмена</button>
+    </div>
+  </div>
+) : scheduleId === app.id ? (
+  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0' }}>
+    <h4 style={{ color: '#1e293b', margin: '0 0 14px 0', fontSize: '14px' }}>
+      {scheduleType === "test" ? "📝 Назначить тестирование" : "🎤 Назначить интервью"}
+    </h4>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+        <div>
+          <label style={{ display: 'block', color: '#64748b', fontSize: '12px', marginBottom: '4px', fontWeight: '500' }}>📅 Дата</label>
+          <input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)}
+            style={{ width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#1e293b', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
+        </div>
+        <div>
+          <label style={{ display: 'block', color: '#64748b', fontSize: '12px', marginBottom: '4px', fontWeight: '500' }}>🕐 Время</label>
+          <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)}
+            style={{ width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#1e293b', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
+        </div>
+      </div>
+      <div>
+        <label style={{ display: 'block', color: '#64748b', fontSize: '12px', marginBottom: '4px', fontWeight: '500' }}>📍 Место проведения</label>
+        <input value={scheduleLocation} onChange={e => setScheduleLocation(e.target.value)}
+          placeholder="Например: Каб. 305, корпус А"
+          style={{ width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#1e293b', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
+      </div>
+      <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+        <button onClick={() => scheduleEvent(app.id)}
+          style={{ flex: 1, background: scheduleType === "test" ? '#7c3aed' : '#2563eb', color: 'white', border: 'none', padding: '11px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
+          ✓ Подтвердить и отправить
+        </button>
+        <button onClick={() => { setScheduleId(null); setScheduleType(null); setScheduleDate(""); setScheduleTime(""); setScheduleLocation(""); }}
+          style={{ flex: 1, background: '#e2e8f0', color: '#64748b', border: 'none', padding: '11px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>
+          Отмена
+        </button>
+      </div>
+    </div>
+  </div>
+) : (
+  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+    <button onClick={() => update(app.id, "Принято")}
+      style={{ flex: 1, background: '#22c55e', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
+      ✓ Принять
+    </button>
+    <button onClick={() => { setScheduleId(app.id); setScheduleType("test"); }}
+      style={{ flex: 1, background: '#7c3aed', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
+      📝 Тестирование
+    </button>
+    <button onClick={() => { setScheduleId(app.id); setScheduleType("interview"); }}
+      style={{ flex: 1, background: '#2563eb', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
+      🎤 Интервью
+    </button>
+    <button onClick={() => setCommentId(app.id)}
+      style={{ flex: 1, background: '#f59e0b', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
+      ✗ Ошибка
+    </button>
+  </div>
+)}
               </div>
             ))}
           </div>
