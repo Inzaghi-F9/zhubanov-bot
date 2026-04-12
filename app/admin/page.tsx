@@ -62,7 +62,14 @@ const [scheduleLocation, setScheduleLocation] = useState("");
         });
       }
     }
-    toast.success(status === "Принято" ? "Заявка принята!" : "Ошибка отправлена студенту");
+    const messages: Record<string, string> = {
+  "Принято": "✅ Заявка принята!",
+  "Ошибка": "⚠️ Ошибка отправлена студенту",
+  "Рекомендован факультетом": "🎓 Студент рекомендован",
+  "Приглашены на тестирование": "📝 Приглашение на тестирование отправлено",
+  "Приглашены на интервью": "🎤 Приглашение на интервью отправлено",
+};
+toast.success(messages[status] || "Статус обновлён!");
     setCommentId(null); setText(""); loadApps();
   };
   const scheduleEvent = async (id: string) => {
