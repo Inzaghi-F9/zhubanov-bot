@@ -1,0 +1,15 @@
+[33m8e2bdcb[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m feat: landing page with FAQ, partners, contacts, steps
+[33m768098c[m fix: toast messages per status
+[33m7c4426f[m feat: schedule test and interview with date/time/location
+[33m6005db6[m fix: faculty login via old auth system
+[33mddbbf6d[m feat: multi-stage statuses faculty-department
+[33m85e1f80[m fix: update urls to vercel
+[33m89bb3e1[m feat: admin charts and statistics
+[33mcd26d84[m feat: show application details in admin
+[33m25df73b[m feat: application form with purpose and dates
+[33m26c53ca[m feat: toast notifications
+[33mf47fc6f[m feat: toast notifications
+[33ma1e7a9b[m fix: chat autoscroll + better AI prompt
+[33m676ef70[m fix: chat autoscroll + better AI prompt
+[33mac88392[m fix: chat autoscroll + better AI prompt
+[33m02aa6e0[m feat: student profile with avatar
