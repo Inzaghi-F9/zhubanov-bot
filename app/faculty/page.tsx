@@ -11,6 +11,8 @@ export default function FacultyDashboard() {
   const [isMobile, setIsMobile] = useState(false);
   const [commentId, setCommentId] = useState<string | null>(null);
   const [text, setText] = useState("");
+  const [activeTab, setActiveTab] = useState("applications");
+  const [shortlist, setShortlist] = useState<string[]>([]);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -61,6 +63,50 @@ export default function FacultyDashboard() {
     setCommentId(null); setText(""); loadApps();
   };
 
+  const toggleShortlist = (appId: string) => {
+    setShortlist(prev => 
+      prev.includes(appId) 
+        ? prev.filter(id => id !== appId)
+        : [...prev, appId]
+    );
+  };
+
+  const sendShortlist = async () => {
+    const shortlistedApps = apps.filter(a => shortlist.includes(a.id) && a.status === "Рекомендован факультетом");
+    if (shortlistedApps.length === 0) {
+      toast.error("Добавьте рекомендованных кандидатов в шорт-лист");
+      return;
+    }
+
+    for (const app of shortlistedApps) {
+      await supabase.from("applications")
+        .update({ status: "На рассмотрении (департамент)" })
+        .eq("id", app.id);
+
+      if (app.student_login) {
+        const { data: user } = await supabase
+          .from("users").select("email, name")
+          .eq("login", app.student_login).single();
+        if (user?.email) {
+          await fetch("/api/notify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              studentEmail: user.email,
+              studentName: user.name,
+              status: "На рассмотрении (департамент)",
+              comment: "Ваша заявка передана в департамент",
+            }),
+          });
+        }
+      }
+    }
+
+    toast.success(`Шорт-лист из ${shortlistedApps.length} кандидатов отправлен в департамент!`);
+    setShortlist([]);
+    loadApps();
+  };
+
   const filtered = filter === "все" ? apps : apps.filter(a => a.status === filter);
   const counts = {
     все: apps.length,
@@ -107,6 +153,42 @@ export default function FacultyDashboard() {
       </div>
 
       <div style={{ padding: isMobile ? '16px' : '28px 32px' }}>
+        {/* Вкладки */}
+        <div style={{ display: 'flex', gap: '0', marginBottom: '20px', borderBottom: '2px solid #e5e7eb' }}>
+          <button
+            onClick={() => setActiveTab("applications")}
+            style={{
+              padding: '14px 20px',
+              background: activeTab === "applications" ? '#0d9488' : 'transparent',
+              color: activeTab === "applications" ? 'white' : '#64748b',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: '600',
+              fontSize: '14px',
+              borderBottom: activeTab === "applications" ? '3px solid #0d9488' : 'none'
+            }}
+          >
+            📋 Заявки ({apps.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("shortlist")}
+            style={{
+              padding: '14px 20px',
+              background: activeTab === "shortlist" ? '#0d9488' : 'transparent',
+              color: activeTab === "shortlist" ? 'white' : '#64748b',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: '600',
+              fontSize: '14px',
+              borderBottom: activeTab === "shortlist" ? '3px solid #0d9488' : 'none'
+            }}
+          >
+            ✨ Шорт-лист ({shortlist.length})
+          </button>
+        </div>
+
+        {activeTab === "applications" ? (
+          <>
         {/* Статистика */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
           {[
@@ -219,6 +301,49 @@ export default function FacultyDashboard() {
               </div>
             ))}
           </div>
+          </>
+        ) : (
+          <>
+          {/* Шорт-лист */}
+          <div style={{ background: 'white', borderRadius: '14px', padding: isMobile ? '16px' : '24px', border: '1px solid #e5e7eb', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 4px 0', color: '#1e293b' }}>Формирование шорт-листа</h3>
+                <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Выберите рекомендованных кандидатов для передачи в департамент</p>
+              </div>
+              {shortlist.length > 0 && (
+                <button onClick={sendShortlist}
+                  style={{ background: '#0d9488', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                  ✓ Отправить {shortlist.length} кандидатов →
+                </button>
+              )}
+            </div>
+
+            {apps.filter(a => a.status === "Рекомендован факультетом").length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '32px', color: '#64748b' }}>
+                <div style={{ fontSize: '32px', marginBottom: '8px' }}>📭</div>
+                <div>Нет рекомендованных кандидатов для добавления в шорт-лист</div>
+                <div style={{ fontSize: '13px', marginTop: '8px' }}>Сначала рекомендуйте кандидатов на вкладке "Заявки"</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {apps.filter(a => a.status === "Рекомендован факультетом").map(app => (
+                  <div key={app.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: shortlist.includes(app.id) ? '#dcfce7' : '#f8fafc', border: `2px solid ${shortlist.includes(app.id) ? '#22c55e' : '#e5e7eb'}`, borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s' }}
+                    onClick={() => toggleShortlist(app.id)}>
+                    <input type="checkbox" checked={shortlist.includes(app.id)} readOnly
+                      style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#0d9488' }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: '600', fontSize: '14px', color: '#1e293b' }}>{app.student_name}</div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>{app.university_name} • {new Date(app.created_at).toLocaleDateString('ru-RU')}</div>
+                    </div>
+                    <span style={{ fontSize: '18px', color: '#0d9488' }}>✓</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          </>
+        )}
         )}
       </div>
     </div>
