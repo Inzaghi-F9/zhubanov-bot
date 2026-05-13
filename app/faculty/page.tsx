@@ -301,7 +301,8 @@ export default function FacultyDashboard() {
               </div>
             ))}
           </div>
-          </>
+        )}
+        </>
         ) : (
           <>
           {/* Шорт-лист */}
@@ -343,7 +344,6 @@ export default function FacultyDashboard() {
             )}
           </div>
           </>
-        )}
         )}
       </div>
     </div>

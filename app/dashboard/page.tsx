@@ -420,7 +420,11 @@ const statusText = (s: string) => {
             </button>
           ))}
         </nav>
-        <div style={{ padding: '16px 12px' }}>
+        <div style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <button onClick={() => router.push("/")}
+            style={{ width: '100%', padding: '11px', border: '1px solid rgba(255,255,255,0.3)', color: 'rgba(255,255,255,0.9)', borderRadius: '10px', backgroundColor: 'rgba(255,255,255,0.1)', cursor: 'pointer', fontSize: '14px', fontWeight: '500' }}>
+            🏠 На главную
+          </button>
           <button onClick={() => { localStorage.removeItem("current_session"); router.push("/auth"); }}
             style={{ width: '100%', padding: '11px', border: '1px solid rgba(255,255,255,0.3)', color: 'rgba(255,255,255,0.8)', borderRadius: '10px', backgroundColor: 'transparent', cursor: 'pointer', fontSize: '14px' }}>
             Выйти

@@ -50,6 +50,7 @@ export default function LandingPage() {
           <a href="#about" style={{ color: '#64748b', textDecoration: 'none', fontSize: '14px' }}>О программе</a>
           <a href="#steps" style={{ color: '#64748b', textDecoration: 'none', fontSize: '14px' }}>Как подать</a>
           <a href="/programs" style={{ color: '#64748b', textDecoration: 'none', fontSize: '14px' }}>Программы</a>
+          <a href="/internships" style={{ color: '#64748b', textDecoration: 'none', fontSize: '14px' }}>Стажировки</a>
           <a href="/faq" style={{ color: '#64748b', textDecoration: 'none', fontSize: '14px' }}>FAQ</a>
           <a href="/contacts" style={{ color: '#64748b', textDecoration: 'none', fontSize: '14px' }}>Контакты</a>
           <button onClick={() => router.push('/auth')}
