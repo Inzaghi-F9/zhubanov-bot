@@ -1,351 +1,215 @@
 "use client";
+
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { GraduationCap, LogOut, RefreshCw, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { signOut } from "@/lib/auth";
+import { STATUS, FACULTY_STATUSES, type DbStatus } from "@/lib/statuses";
+import { StatusBadge } from "@/components/StatusBadge";
+import { StatusTimeline } from "@/components/StatusTimeline";
+import { getDocumentUrl } from "@/lib/storage";
 import toast from "react-hot-toast";
+import type { Application } from "@/lib/types";
+
+const FILTERS = ["все", STATUS.FACULTY_REVIEW, STATUS.FACULTY_RECOMMENDED, STATUS.FACULTY_REJECTED, STATUS.DEPARTMENT_REVIEW];
 
 export default function FacultyDashboard() {
-  const router = useRouter();
-  const [apps, setApps] = useState<any[]>([]);
+  const supabase = createClient();
+
+  const [apps, setApps] = useState<Application[]>([]);
   const [filter, setFilter] = useState("все");
-  const [isMobile, setIsMobile] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [commentId, setCommentId] = useState<string | null>(null);
   const [text, setText] = useState("");
-  const [activeTab, setActiveTab] = useState("applications");
-  const [shortlist, setShortlist] = useState<string[]>([]);
+  const [urls, setUrls] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
-
-  useEffect(() => {
-    const session = localStorage.getItem("current_session");
-    if (!session) { router.push("/auth"); return; }
-    const s = JSON.parse(session);
-    if (s.role !== "faculty") { router.push("/auth"); return; }
     loadApps();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadApps = async () => {
+    setLoading(true);
+    // RLS сам отфильтрует: faculty видит все заявки
     const { data } = await supabase
       .from("applications")
       .select("*")
+      .in("status", FACULTY_STATUSES)
       .order("created_at", { ascending: false });
-    if (data) setApps(data);
+    if (data) setApps(data as Application[]);
+    setLoading(false);
   };
 
-  const update = async (id: string, status: string, comment: string = "") => {
-    await supabase.from("applications")
+  const update = async (id: string, status: DbStatus, comment: string = "") => {
+    const app = apps.find((a) => a.id === id);
+    const { error } = await supabase
+      .from("applications")
       .update({ status, faculty_comment: comment })
       .eq("id", id);
+    if (error) { toast.error("Ошибка обновления"); return; }
 
-    const app = apps.find(a => a.id === id);
-    if (app?.student_login) {
-      const { data: user } = await supabase
-        .from("users").select("email, name")
-        .eq("login", app.student_login).single();
-      if (user?.email) {
-        await fetch("/api/notify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            studentEmail: user.email,
-            studentName: user.name,
-            status, comment,
-          }),
-        });
-      }
+    if (app) {
+      await fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentEmail: app.student_email,
+          studentName: app.student_name,
+          status,
+          comment,
+        }),
+      });
     }
-    toast.success("Статус обновлён!");
+    toast.success(status === STATUS.FACULTY_RECOMMENDED ? "Рекомендовано! Письмо отправлено" : "Отклонено. Письмо отправлено");
     setCommentId(null); setText(""); loadApps();
   };
 
-  const toggleShortlist = (appId: string) => {
-    setShortlist(prev => 
-      prev.includes(appId) 
-        ? prev.filter(id => id !== appId)
-        : [...prev, appId]
-    );
-  };
+  // Подписанные ссылки на документы открываем при разворачивании карточки
+  const showFiles = async (app: Application) => {
+    const willExpand = expanded !== app.id;
+    setExpanded(willExpand ? app.id : null);
+    if (!willExpand || app.file_paths.length === 0) return;
 
-  const sendShortlist = async () => {
-    const shortlistedApps = apps.filter(a => shortlist.includes(a.id) && a.status === "Рекомендован факультетом");
-    if (shortlistedApps.length === 0) {
-      toast.error("Добавьте рекомендованных кандидатов в шорт-лист");
-      return;
+    const nextUrls = { ...urls };
+    for (const path of app.file_paths) {
+      if (!nextUrls[path]) nextUrls[path] = (await getDocumentUrl(path)) ?? "";
     }
-
-    for (const app of shortlistedApps) {
-      await supabase.from("applications")
-        .update({ status: "На рассмотрении (департамент)" })
-        .eq("id", app.id);
-
-      if (app.student_login) {
-        const { data: user } = await supabase
-          .from("users").select("email, name")
-          .eq("login", app.student_login).single();
-        if (user?.email) {
-          await fetch("/api/notify", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              studentEmail: user.email,
-              studentName: user.name,
-              status: "На рассмотрении (департамент)",
-              comment: "Ваша заявка передана в департамент",
-            }),
-          });
-        }
-      }
-    }
-
-    toast.success(`Шорт-лист из ${shortlistedApps.length} кандидатов отправлен в департамент!`);
-    setShortlist([]);
-    loadApps();
+    setUrls(nextUrls);
   };
 
-  const filtered = filter === "все" ? apps : apps.filter(a => a.status === filter);
-  const counts = {
-    все: apps.length,
-    "На проверке (факультет)": apps.filter(a => a.status === "На проверке (факультет)").length,
-    "На проверке": apps.filter(a => a.status === "На проверке").length,
-    "Рекомендован факультетом": apps.filter(a => a.status === "Рекомендован факультетом").length,
-    "Отклонён факультетом": apps.filter(a => a.status === "Отклонён факультетом").length,
-  };
-
-  const statusColor = (s: string) => {
-    if (s === 'Рекомендован факультетом') return '#22c55e';
-    if (s === 'Отклонён факультетом') return '#ef4444';
-    return '#f59e0b';
-  };
-  const statusBg = (s: string) => {
-    if (s === 'Рекомендован факультетом') return '#dcfce7';
-    if (s === 'Отклонён факультетом') return '#fee2e2';
-    return '#fef9c3';
-  };
-  const statusText = (s: string) => {
-    if (s === 'Рекомендован факультетом') return '#16a34a';
-    if (s === 'Отклонён факультетом') return '#dc2626';
-    return '#ca8a04';
-  };
+  const filtered = filter === "все" ? apps : apps.filter((a) => a.status === filter);
+  const counts = (s: string) => apps.filter((a) => a.status === s).length;
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f0f4f8', fontFamily: "'Inter', sans-serif" }}>
+    <div className="min-h-screen bg-[color:var(--background)]">
       {/* Header */}
-      <div style={{ background: 'linear-gradient(135deg, #1e3a5f, #0d9488)', padding: isMobile ? '0 16px' : '0 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '60px', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ fontSize: '20px' }}>🏛️</div>
-          <div>
-            <div style={{ color: 'white', fontWeight: '700', fontSize: isMobile ? '14px' : '16px' }}>Кабинет факультета</div>
-            {!isMobile && <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>Университет им. К. Жубанова</div>}
+      <header className="sticky top-0 z-50 bg-gradient-to-r from-teal-700 to-teal-600 text-white shadow-lg">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <GraduationCap size={22} />
+            <div>
+              <div className="text-sm font-bold">ARSU Факультет</div>
+              <div className="text-[11px] text-teal-200">Проверка заявок на мобильность</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={loadApps} aria-label="Обновить"
+              className="rounded-lg p-2 transition hover:bg-white/10">
+              <RefreshCw size={16} />
+            </button>
+            <button onClick={signOut} aria-label="Выйти"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/30 px-3 py-1.5 text-xs transition hover:bg-white/10">
+              <LogOut size={13} /> Выйти
+            </button>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={loadApps} style={{ background: 'rgba(255,255,255,0.15)', color: 'white', border: 'none', padding: '7px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>🔄</button>
-          <button onClick={() => { localStorage.removeItem("current_session"); router.push("/auth"); }}
-            style={{ background: 'rgba(239,68,68,0.2)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)', padding: '7px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>
-            Выйти
-          </button>
-        </div>
-      </div>
+      </header>
 
-      <div style={{ padding: isMobile ? '16px' : '28px 32px' }}>
-        {/* Вкладки */}
-        <div style={{ display: 'flex', gap: '0', marginBottom: '20px', borderBottom: '2px solid #e5e7eb' }}>
-          <button
-            onClick={() => setActiveTab("applications")}
-            style={{
-              padding: '14px 20px',
-              background: activeTab === "applications" ? '#0d9488' : 'transparent',
-              color: activeTab === "applications" ? 'white' : '#64748b',
-              border: 'none',
-              cursor: 'pointer',
-              fontWeight: '600',
-              fontSize: '14px',
-              borderBottom: activeTab === "applications" ? '3px solid #0d9488' : 'none'
-            }}
-          >
-            📋 Заявки ({apps.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("shortlist")}
-            style={{
-              padding: '14px 20px',
-              background: activeTab === "shortlist" ? '#0d9488' : 'transparent',
-              color: activeTab === "shortlist" ? 'white' : '#64748b',
-              border: 'none',
-              cursor: 'pointer',
-              fontWeight: '600',
-              fontSize: '14px',
-              borderBottom: activeTab === "shortlist" ? '3px solid #0d9488' : 'none'
-            }}
-          >
-            ✨ Шорт-лист ({shortlist.length})
-          </button>
-        </div>
-
-        {activeTab === "applications" ? (
-          <>
-        {/* Статистика */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
-          {[
-            { label: 'Всего заявок', value: counts['все'], color: '#0d9488', icon: '📋' },
-            { label: 'На проверке', value: counts['На проверке'] + counts['На проверке (факультет)'], color: '#d97706', icon: '⏳' },
-            { label: 'Рекомендовано', value: counts['Рекомендован факультетом'], color: '#16a34a', icon: '✅' },
-            { label: 'Отклонено', value: counts['Отклонён факультетом'], color: '#dc2626', icon: '❌' },
-          ].map(stat => (
-            <div key={stat.label} style={{ background: 'white', borderRadius: '12px', padding: '16px', border: '1px solid #e5e7eb', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ color: '#64748b', fontSize: '12px', marginBottom: '4px' }}>{stat.label}</div>
-                  <div style={{ color: stat.color, fontSize: '28px', fontWeight: '700' }}>{stat.value}</div>
-                </div>
-                <div style={{ fontSize: '24px' }}>{stat.icon}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
+      <main className="mx-auto max-w-5xl px-4 py-6">
         {/* Фильтры */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', overflowX: 'auto', paddingBottom: '4px' }}>
-          {['все', 'На проверке', 'Рекомендован факультетом', 'Отклонён факультетом'].map(f => (
+        <div className="mb-5 flex flex-wrap gap-2">
+          {FILTERS.map((f) => (
             <button key={f} onClick={() => setFilter(f)}
-              style={{ padding: '7px 14px', borderRadius: '20px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '500', background: filter === f ? '#0d9488' : 'white', color: filter === f ? 'white' : '#64748b', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-              {f === 'все' ? 'Все' : f}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
+                filter === f ? "bg-teal-600 text-white shadow-md shadow-teal-600/25" : "card hover:border-teal-400"
+              }`}>
+              {f === "все" ? `Все (${apps.length})` : `${f} (${counts(f)})`}
             </button>
           ))}
         </div>
 
-        {/* Список заявок */}
-        {filtered.length === 0 ? (
-          <div style={{ background: 'white', borderRadius: '16px', padding: '48px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: '40px', marginBottom: '12px' }}>📭</div>
-            <div style={{ color: '#64748b' }}>Заявок нет</div>
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="card h-28 animate-pulse rounded-2xl" />
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="card rounded-2xl p-10 text-center text-sm text-slate-500">
+            Заявок пока нет 🎓
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {filtered.map(app => (
-              <div key={app.id} style={{ background: 'white', borderRadius: '14px', padding: isMobile ? '16px' : '20px 24px', border: '1px solid #e5e7eb', borderLeft: `5px solid ${statusColor(app.status)}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-
-                {/* Студент */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                  <div style={{ width: '40px', height: '40px', background: 'linear-gradient(135deg, #0d9488, #2563eb)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '700', fontSize: '16px', flexShrink: 0 }}>
-                    {app.student_name?.[0]}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: '600', color: '#1e293b', fontSize: '15px' }}>{app.student_name}</div>
-                    <div style={{ color: '#94a3b8', fontSize: '12px' }}>{app.student_login} · {new Date(app.created_at).toLocaleDateString('ru-RU')}</div>
-                  </div>
-                  <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', background: statusBg(app.status), color: statusText(app.status), flexShrink: 0 }}>
-                    {app.status}
-                  </span>
-                </div>
-
-                {/* Детали */}
-                {(app.university_name || app.date_from || app.purpose) && (
-                  <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {app.university_name && <div style={{ fontSize: '13px', color: '#1e293b' }}>🏫 <strong>Университет:</strong> {app.university_name}</div>}
-                    {app.date_from && app.date_to && <div style={{ fontSize: '13px', color: '#1e293b' }}>📅 <strong>Сроки:</strong> {new Date(app.date_from).toLocaleDateString('ru-RU')} — {new Date(app.date_to).toLocaleDateString('ru-RU')}</div>}
-                    {app.purpose && <div style={{ fontSize: '13px', color: '#1e293b' }}>🎯 <strong>Цель:</strong> {app.purpose}</div>}
-                  </div>
-                )}
-
-                {/* Файлы */}
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                  {app.file_names?.map((name: string, i: number) => (
-                    <a key={i} href={app.file_urls[i]} download={name}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', color: '#0369a1', fontSize: '12px', textDecoration: 'none' }}>
-                      💾 {name}
-                    </a>
-                  ))}
-                </div>
-
-                {app.faculty_comment && (
-                  <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#fef2f2', borderRadius: '8px', color: '#dc2626', fontSize: '13px' }}>
-                    💬 Комментарий факультета: {app.faculty_comment}
-                  </div>
-                )}
-
-                {/* Действия */}
-                {commentId === app.id ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <input value={text} onChange={e => setText(e.target.value)}
-                      placeholder="Причина отклонения..."
-                      style={{ padding: '10px 12px', border: '1px solid #fca5a5', borderRadius: '8px', color: '#1e293b', fontSize: '13px', outline: 'none', width: '100%', boxSizing: 'border-box' }} />
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={() => update(app.id, "Отклонён факультетом", text)}
-                        style={{ flex: 1, background: '#ef4444', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
-                        Отправить
-                      </button>
-                      <button onClick={() => setCommentId(null)}
-                        style={{ flex: 1, background: '#e2e8f0', color: '#64748b', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>
-                        Отмена
-                      </button>
+          <div className="space-y-3">
+            {filtered.map((app) => (
+              <article key={app.id} className="card overflow-hidden rounded-2xl shadow-sm">
+                <button onClick={() => showFiles(app)}
+                  className="flex w-full items-center justify-between gap-3 p-4 text-left transition hover:bg-slate-50">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold">{app.student_name}</span>
+                      <StatusBadge status={app.status} />
+                    </div>
+                    <div className="mt-1 truncate text-xs text-slate-500">
+                      🏫 {app.university_name} · 📅 {new Date(app.date_from).toLocaleDateString("ru-RU")} — {new Date(app.date_to).toLocaleDateString("ru-RU")}
+                      {app.file_paths.length > 0 && <> · 📎 {app.file_paths.length}</>}
                     </div>
                   </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => update(app.id, "Рекомендован факультетом")}
-                      style={{ flex: 1, background: '#22c55e', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
-                      ✓ Рекомендовать
-                    </button>
-                    <button onClick={() => setCommentId(app.id)}
-                      style={{ flex: 1, background: '#ef4444', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
-                      ✗ Отклонить
-                    </button>
+                  {expanded === app.id ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
+                </button>
+
+                {expanded === app.id && (
+                  <div className="border-t border-[color:var(--border)] p-4">
+                    <StatusTimeline status={app.status} />
+
+                    <div className="card mt-3 space-y-1.5 rounded-xl p-3 text-sm">
+                      <div>🎯 <strong>Цель:</strong> {app.purpose}</div>
+                      <div>🏫 <strong>Университет:</strong> {app.university_name}</div>
+                      <div>📧 <strong>Email:</strong> {app.student_email}</div>
+                    </div>
+
+                    {app.file_paths.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {app.file_paths.map((path, i) => (
+                          <a key={path} href={urls[path] || "#"} target="_blank" rel="noreferrer"
+                            className={`inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700 transition ${urls[path] ? "hover:bg-blue-100" : "opacity-50"}`}>
+                            <FileText size={12} /> {app.file_names[i] ?? path.split("/").pop()}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+
+                    {app.faculty_comment && (
+                      <div className="mt-3 rounded-lg bg-red-50 p-3 text-xs text-red-700">
+                        💬 Предыдущий комментарий: {app.faculty_comment}
+                      </div>
+                    )}
+
+                    {commentId === app.id ? (
+                      <div className="mt-3 flex flex-col gap-2">
+                        <input value={text} onChange={(e) => setText(e.target.value)}
+                          placeholder="Причина отклонения…"
+                          className="card w-full rounded-xl px-3 py-2.5 text-sm outline-none focus:border-red-400" />
+                        <div className="flex gap-2">
+                          <button onClick={() => update(app.id, STATUS.FACULTY_REJECTED, text)}
+                            className="flex-1 rounded-xl bg-red-500 py-2.5 text-xs font-semibold text-white hover:bg-red-600 transition">
+                            Отправить
+                          </button>
+                          <button onClick={() => setCommentId(null)}
+                            className="flex-1 rounded-xl bg-slate-200 py-2.5 text-xs text-slate-600 transition hover:bg-slate-300">
+                            Отмена
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3 flex gap-2">
+                        <button onClick={() => update(app.id, STATUS.FACULTY_RECOMMENDED)}
+                          className="flex-1 rounded-xl bg-emerald-500 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-600">
+                          ✓ Рекомендовать
+                        </button>
+                        <button onClick={() => setCommentId(app.id)}
+                          className="flex-1 rounded-xl bg-red-500 py-2.5 text-xs font-semibold text-white transition hover:bg-red-600">
+                          ✗ Отклонить
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+              </article>
             ))}
           </div>
         )}
-        </>
-        ) : (
-          <>
-          {/* Шорт-лист */}
-          <div style={{ background: 'white', borderRadius: '14px', padding: isMobile ? '16px' : '24px', border: '1px solid #e5e7eb', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div>
-                <h3 style={{ fontSize: '16px', fontWeight: '700', margin: '0 0 4px 0', color: '#1e293b' }}>Формирование шорт-листа</h3>
-                <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Выберите рекомендованных кандидатов для передачи в департамент</p>
-              </div>
-              {shortlist.length > 0 && (
-                <button onClick={sendShortlist}
-                  style={{ background: '#0d9488', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                  ✓ Отправить {shortlist.length} кандидатов →
-                </button>
-              )}
-            </div>
-
-            {apps.filter(a => a.status === "Рекомендован факультетом").length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '32px', color: '#64748b' }}>
-                <div style={{ fontSize: '32px', marginBottom: '8px' }}>📭</div>
-                <div>Нет рекомендованных кандидатов для добавления в шорт-лист</div>
-                <div style={{ fontSize: '13px', marginTop: '8px' }}>Сначала рекомендуйте кандидатов на вкладке "Заявки"</div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {apps.filter(a => a.status === "Рекомендован факультетом").map(app => (
-                  <div key={app.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: shortlist.includes(app.id) ? '#dcfce7' : '#f8fafc', border: `2px solid ${shortlist.includes(app.id) ? '#22c55e' : '#e5e7eb'}`, borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s' }}
-                    onClick={() => toggleShortlist(app.id)}>
-                    <input type="checkbox" checked={shortlist.includes(app.id)} readOnly
-                      style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: '#0d9488' }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: '600', fontSize: '14px', color: '#1e293b' }}>{app.student_name}</div>
-                      <div style={{ fontSize: '12px', color: '#64748b' }}>{app.university_name} • {new Date(app.created_at).toLocaleDateString('ru-RU')}</div>
-                    </div>
-                    <span style={{ fontSize: '18px', color: '#0d9488' }}>✓</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          </>
-        )}
-      </div>
+      </main>
     </div>
   );
 }

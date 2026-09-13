@@ -1,437 +1,474 @@
 "use client";
+
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { GraduationCap, LogOut, Send, FileText, Camera, MapPin, Milestone, Bot, User as UserIcon } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { getProfile, signOut } from "@/lib/auth";
+import { uploadDocuments, uploadAvatar } from "@/lib/storage";
+import { STATUS } from "@/lib/statuses";
+import { StatusBadge } from "@/components/StatusBadge";
+import { StatusTimeline } from "@/components/StatusTimeline";
+import { FileUpload, type PickedFile } from "@/components/FileUpload";
 import toast from "react-hot-toast";
+import type { Profile, Application } from "@/lib/types";
+
+type Tab = "home" | "apply" | "status" | "chat" | "profile";
+
+interface AppForm {
+  purpose: string;
+  university_name: string;
+  date_from: string;
+  date_to: string;
+}
+
+const TABS: { id: Tab; icon: string; label: string }[] = [
+  { id: "home", icon: "🏠", label: "Главная" },
+  { id: "apply", icon: "📤", label: "Подать заявку" },
+  { id: "status", icon: "📊", label: "Мои заявки" },
+  { id: "chat", icon: "🤖", label: "ИИ-ассистент" },
+  { id: "profile", icon: "👤", label: "Профиль" },
+];
+
 export default function StudentDashboard() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState("menu");
-  const [files, setFiles] = useState<{name: string, data: string}[]>([]);
-  const [student, setStudent] = useState<any>(null);
-  const [apps, setApps] = useState<any[]>([]);
+  const supabase = createClient();
 
-  const [loading, setLoading] = useState(false);
-  const [appForm, setAppForm] = useState({ purpose: "", university_name: "", date_from: "", date_to: "" });
-  const [chatMessages, setChatMessages] = useState<{role:string,content:string}[]>([
-    {role:"assistant", content:"Сәлеметсіз бе! Я ИИ-ассистент университета им. К. Жубанова. Чем могу помочь?"}
+  const [student, setStudent] = useState<Profile | null>(null);
+  const [apps, setApps] = useState<Application[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<Tab>("home");
+
+  // Форма заявки
+  const [appForm, setAppForm] = useState<AppForm>({ purpose: "", university_name: "", date_from: "", date_to: "" });
+  const [files, setFiles] = useState<PickedFile[]>([]);
+  const [sending, setSending] = useState(false);
+
+  // Профиль
+  const [profileForm, setProfileForm] = useState({ name: "", group_name: "" });
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  // Чат
+  const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
+    { role: "assistant", content: "Сәлеметсіз бе! 👋 Я ИИ-ассистент университета. Спросите о мобильности, документах или заявках." },
   ]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-useEffect(() => {
-  chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-}, [chatMessages]);
-  const [isMobile, setIsMobile] = useState(false);
-  const [profileForm, setProfileForm] = useState({ name: "", group_name: "" });
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
+    (async () => {
+      // Сессия в httpOnly-cookie; профиль берём из profiles (middleware уже проверил вход)
+      const profile = await getProfile();
+      if (!profile) { router.push("/auth"); return; }
+      setStudent(profile);
+      setProfileForm({ name: profile.name, group_name: profile.group_name ?? "" });
+      setAvatarUrl(profile.avatar_url);
+
+      const { data } = await supabase
+        .from("applications")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (data) setApps(data as Application[]);
+      setLoading(false);
+    })();
   }, []);
 
   useEffect(() => {
-    const session = localStorage.getItem("current_session");
-    if (!session) { router.push("/auth"); return; }
-    const s = JSON.parse(session);
-    setStudent(s);
-    setProfileForm({ name: s.name || "", group_name: s.group_name || "" });
-    setAvatarUrl(s.avatar_url || null);
-    loadApps(s.login);
-  }, []);
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
 
-  const loadApps = async (login: string) => {
-    const { data } = await supabase.from("applications").select("*").eq("student_login", login).order("created_at", { ascending: false });
-    if (data) setApps(data);
+  // Отправка заявки: файлы уезжают в Storage, в БД — только пути
+  const sendApplication = async () => {
+    if (!student) return;
+    if (!appForm.purpose.trim()) { toast.error("Укажите цель поездки"); return; }
+    if (!appForm.university_name.trim()) { toast.error("Укажите университет назначения"); return; }
+    if (!appForm.date_from || !appForm.date_to) { toast.error("Укажите сроки поездки"); return; }
+    if (appForm.date_from > appForm.date_to) { toast.error("Дата начала позже даты конца"); return; }
+    if (files.length === 0) { toast.error("Прикрепите документы"); return; }
+
+    setSending(true);
+    const appId = crypto.randomUUID();
+    const uploaded = await uploadDocuments(student.id, appId, files.map((f) => f.file));
+
+    if ("error" in uploaded) { toast.error(uploaded.error); setSending(false); return; }
+
+    const { error } = await supabase.from("applications").insert({
+      id: appId,
+      student_id: student.id,
+      student_name: student.name,
+      student_email: student.email,
+      university_name: appForm.university_name.trim(),
+      purpose: appForm.purpose.trim(),
+      date_from: appForm.date_from,
+      date_to: appForm.date_to,
+      status: STATUS.FACULTY_REVIEW,
+      file_names: uploaded.names,
+      file_paths: uploaded.paths,
+    });
+
+    if (error) { toast.error("Ошибка отправки заявки"); setSending(false); return; }
+
+    toast.success("Заявка отправлена! Отслеживайте статус 🎉");
+    setFiles([]);
+    setAppForm({ purpose: "", university_name: "", date_from: "", date_to: "" });
+    setActiveTab("status");
+
+    const { data } = await supabase.from("applications").select("*").order("created_at", { ascending: false });
+    if (data) setApps(data as Application[]);
+    setSending(false);
   };
 
-  const handleFile = (e: any) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => setFiles(prev => [...prev, { name: file.name, data: reader.result as string }]);
-    reader.readAsDataURL(file);
-  };
-
-  const handleAvatar = (e: any) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => setAvatarUrl(reader.result as string);
-    reader.readAsDataURL(file);
-  };
-
+  // Сохранение профиля: данные + аватар в Storage
   const saveProfile = async () => {
+    if (!student) return;
     if (!profileForm.name.trim()) { toast.error("Имя не может быть пустым"); return; }
-    setProfileLoading(true);
-    const { error } = await supabase.from("users").update({
-      name: profileForm.name,
-      group_name: profileForm.group_name,
-      avatar_url: avatarUrl,
-    }).eq("login", student.login);
 
-    if (error) { toast.error("Ошибка сохранения"); setProfileLoading(false); return; }
+    setSavingProfile(true);
+    let newAvatar = avatarUrl;
 
-    const updated = { ...student, name: profileForm.name, group_name: profileForm.group_name, avatar_url: avatarUrl };
+    const picked = avatarInputRef.current?.files?.[0];
+    if (picked) {
+      newAvatar = await uploadAvatar(student.id, picked);
+      if (!newAvatar) toast.error("Аватар не загрузился, но данные сохранятся");
+    }
+
+    const { error } = await supabase.from("profiles").update({
+      name: profileForm.name.trim(),
+      group_name: profileForm.group_name.trim() || null,
+      avatar_url: newAvatar,
+    }).eq("id", student.id);
+
+    if (error) { toast.error("Ошибка сохранения"); setSavingProfile(false); return; }
+
+    const updated = { ...student, name: profileForm.name.trim(), group_name: profileForm.group_name, avatar_url: newAvatar };
     setStudent(updated);
-    localStorage.setItem("current_session", JSON.stringify(updated));
-    setProfileLoading(false);
+    setAvatarUrl(newAvatar);
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+    setSavingProfile(false);
     toast.success("Профиль обновлён! ✅");
   };
 
-  const sendDoc = async () => {
-  if (!appForm.purpose.trim()) { toast.error("Укажите цель поездки"); return; }
-  if (!appForm.university_name.trim()) { toast.error("Укажите университет назначения"); return; }
-  if (!appForm.date_from || !appForm.date_to) { toast.error("Укажите сроки поездки"); return; }
-  if (files.length === 0) { toast.error("Прикрепите документы"); return; }
-
-  setLoading(true);
-  const { error } = await supabase.from("applications").insert([{
-    student_name: student.name,
-    student_login: student.login,
-    file_names: files.map(f => f.name),
-    file_urls: files.map(f => f.data),
-    purpose: appForm.purpose,
-    university_name: appForm.university_name,
-    date_from: appForm.date_from,
-    date_to: appForm.date_to,
-    status: "На проверке (факультет)",
-    comment: ""
-  }]);
-  setLoading(false);
-  if (error) { toast.error("Ошибка отправки"); return; }
-  toast.success("Заявка отправлена!");
-  setFiles([]);
-  setAppForm({ purpose: "", university_name: "", date_from: "", date_to: "" });
-  setActiveTab("status");
-  loadApps(student.login);
-};
-
   const sendChat = async () => {
-    if (!chatInput.trim() || chatLoading) return;
-    const userMsg = { role: "user", content: chatInput };
-    const updated = [...chatMessages, userMsg];
-    setChatMessages(updated); setChatInput(""); setChatLoading(true);
+    const text = chatInput.trim().slice(0, 2000);
+    if (!text || chatLoading) return;
+
+    const history = [...chatMessages, { role: "user" as const, content: text }];
+    setChatMessages([...history, { role: "assistant", content: "" }]);
+    setChatInput("");
+    setChatLoading(true);
+
     try {
-      const res = await fetch("/api/chat", { method: "POST", body: JSON.stringify({ messages: updated }) });
-      const data = await res.json();
-      setChatMessages([...updated, { role: "assistant", content: data.text }]);
-    } catch { setChatMessages([...updated, { role: "assistant", content: "Ошибка связи." }]); }
-    finally { setChatLoading(false); }
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: history }),
+      });
+      if (!res.ok || !res.body) throw new Error();
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let acc = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += decoder.decode(value, { stream: true });
+        setChatMessages([...history, { role: "assistant", content: acc }]);
+      }
+    } catch {
+      toast.error("Ошибка связи с ИИ");
+      setChatMessages([...history, { role: "assistant", content: "⚠️ Не удалось получить ответ." }]);
+    } finally {
+      setChatLoading(false);
+    }
   };
 
-  if (!student) return null;
-
-  const navItems = [
-    { id: "menu", icon: "🏠", label: "Главная" },
-    { id: "submit", icon: "📤", label: "Подать" },
-    { id: "status", icon: "🕒", label: "Заявки" },
-    { id: "chat", icon: "🤖", label: "ИИ" },
-    { id: "profile", icon: "👤", label: "Профиль" },
-  ];
-
-  const statusColor = (s: string) => {
-  if (s === 'Принято') return '#22c55e';
-  if (s === 'Ошибка' || s === 'Отклонён факультетом') return '#ef4444';
-  if (s === 'Рекомендован факультетом') return '#0d9488';
-  if (s === 'Приглашены на тестирование' || s === 'Приглашены на интервью') return '#7c3aed';
-  return '#f59e0b';
-};
-const statusBg = (s: string) => {
-  if (s === 'Принято') return '#dcfce7';
-  if (s === 'Ошибка' || s === 'Отклонён факультетом') return '#fee2e2';
-  if (s === 'Рекомендован факультетом') return '#ccfbf1';
-  if (s === 'Приглашены на тестирование' || s === 'Приглашены на интервью') return '#ede9fe';
-  return '#fef9c3';
-};
-const statusText = (s: string) => {
-  if (s === 'Принято') return '#16a34a';
-  if (s === 'Ошибка' || s === 'Отклонён факультетом') return '#dc2626';
-  if (s === 'Рекомендован факультетом') return '#0f766e';
-  if (s === 'Приглашены на тестирование' || s === 'Приглашены на интервью') return '#6d28d9';
-  return '#ca8a04';
-};
-
-  const Avatar = ({ size = 56 }: { size?: number }) => (
-    <div style={{ width: size, height: size, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      {avatarUrl ? (
-        <img src={avatarUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-      ) : (
-        <span style={{ color: 'white', fontWeight: '700', fontSize: size * 0.4 }}>{student.name?.[0]}</span>
-      )}
-    </div>
-  );
-
-  const mainContent = (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f0f4f8' }}>
-      {/* Header */}
-      <div style={{ background: 'white', padding: isMobile ? '14px 16px' : '18px 32px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', flexShrink: 0 }}>
-        <h1 style={{ color: '#1e293b', fontSize: isMobile ? '16px' : '18px', fontWeight: '700', margin: 0 }}>
-          {activeTab === 'menu' ? '🏠 Главная' : activeTab === 'chat' ? '🤖 ИИ-ассистент' : activeTab === 'submit' ? '📤 Подать документы' : activeTab === 'status' ? '🕒 Мои заявки' : '👤 Профиль'}
-        </h1>
-        {isMobile && (
-          <div onClick={() => setActiveTab('profile')} style={{ cursor: 'pointer' }}>
-            <div style={{ width: '34px', height: '34px', borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #1e3a5f, #2563eb)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {avatarUrl ? <img src={avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: 'white', fontWeight: '700', fontSize: '14px' }}>{student.name?.[0]}</span>}
-            </div>
-          </div>
-        )}
-        {!isMobile && <div style={{ fontSize: '13px', color: '#64748b' }}>Университет им. К. Жубанова</div>}
-      </div>
-
-      <div style={{ flex: 1, padding: isMobile ? '16px' : '28px 32px', overflowY: 'auto', paddingBottom: isMobile ? '80px' : '28px' }}>
-
-        {/* ГЛАВНАЯ */}
-        {activeTab === "menu" && (
-          <div>
-            <p style={{ color: '#64748b', marginBottom: '20px', fontSize: '14px' }}>Добро пожаловать, <strong>{student.name}</strong>!</p>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr 1fr', gap: '14px' }}>
-              {[
-                { id: 'submit', icon: '📤', title: 'Подать документы', desc: 'Загрузить файлы', color: '#2563eb' },
-                { id: 'status', icon: '🕒', title: 'Мои заявки', desc: `Заявок: ${apps.length}`, color: '#7c3aed' },
-                { id: 'chat', icon: '🤖', title: 'ИИ-ассистент', desc: 'Задать вопрос', color: '#059669' },
-                { id: 'profile', icon: '👤', title: 'Мой профиль', desc: 'Редактировать данные', color: '#ea580c' },
-              ].map(card => (
-                <div key={card.id} onClick={() => { setActiveTab(card.id); if(card.id==='status') loadApps(student.login); }}
-                  style={{ background: 'white', borderRadius: '14px', padding: isMobile ? '20px 16px' : '28px 24px', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #e5e7eb' }}>
-                  <div style={{ fontSize: isMobile ? '28px' : '32px', marginBottom: '10px' }}>{card.icon}</div>
-                  <div style={{ fontWeight: '700', fontSize: isMobile ? '14px' : '16px', color: '#1e293b', marginBottom: '4px' }}>{card.title}</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>{card.desc}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ПОДАТЬ ДОКУМЕНТЫ */}
-{activeTab === "submit" && (
-  <div style={{ maxWidth: '600px' }}>
-    <div style={{ background: 'white', borderRadius: '16px', padding: isMobile ? '20px 16px' : '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #e5e7eb' }}>
-      <h2 style={{ color: '#1e293b', marginBottom: '8px', fontSize: isMobile ? '17px' : '20px' }}>Анкета заявки</h2>
-      <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '24px' }}>Заполните анкету и прикрепите документы</p>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '20px' }}>
-        <div>
-          <label style={{ display: 'block', color: '#64748b', fontSize: '13px', marginBottom: '6px', fontWeight: '500' }}>🎯 Цель поездки</label>
-          <textarea value={appForm.purpose} onChange={e => setAppForm({...appForm, purpose: e.target.value})}
-            placeholder="Опишите цель академической мобильности..."
-            rows={3}
-            style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }} />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', color: '#64748b', fontSize: '13px', marginBottom: '6px', fontWeight: '500' }}>🏫 Университет назначения</label>
-          <input value={appForm.university_name} onChange={e => setAppForm({...appForm, university_name: e.target.value})}
-            placeholder="Название университета"
-            style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          <div>
-            <label style={{ display: 'block', color: '#64748b', fontSize: '13px', marginBottom: '6px', fontWeight: '500' }}>📅 Дата начала</label>
-            <input type="date" value={appForm.date_from} onChange={e => setAppForm({...appForm, date_from: e.target.value})}
-              style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
-          </div>
-          <div>
-            <label style={{ display: 'block', color: '#64748b', fontSize: '13px', marginBottom: '6px', fontWeight: '500' }}>📅 Дата окончания</label>
-            <input type="date" value={appForm.date_to} onChange={e => setAppForm({...appForm, date_to: e.target.value})}
-              style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
-          </div>
-        </div>
-      </div>
-
-      <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '24px 16px', border: '2px dashed #cbd5e1', borderRadius: '12px', cursor: 'pointer', backgroundColor: '#f8fafc', marginBottom: '16px' }}>
-        <span style={{ fontSize: '32px' }}>📁</span>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ color: '#2563eb', fontWeight: '600', fontSize: '14px' }}>Прикрепить документы</div>
-          <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '4px' }}>PDF, DOCX, JPG и другие</div>
-        </div>
-        <input type="file" onChange={handleFile} style={{ display: 'none' }} />
-      </label>
-
-      {files.length > 0 && (
-        <div style={{ marginBottom: '16px' }}>
-          {files.map((f, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', marginBottom: '8px' }}>
-              <span style={{ color: '#0369a1', fontSize: '13px' }}>📄 {f.name}</span>
-              <button onClick={() => setFiles(files.filter((_, idx) => idx !== i))} style={{ color: '#ef4444', border: 'none', background: 'none', cursor: 'pointer', fontSize: '20px' }}>×</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <button onClick={sendDoc} disabled={loading}
-        style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '15px', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>
-        {loading ? "⏳ Отправляем..." : "📤 Отправить заявку"}
-      </button>
-    </div>
-  </div>
-)}
-
-        {/* МОИ ЗАЯВКИ */}
-        {activeTab === "status" && (
-          <div style={{ maxWidth: '700px' }}>
-            <h2 style={{ color: '#1e293b', marginBottom: '16px', fontSize: isMobile ? '17px' : '20px' }}>Мои заявки</h2>
-            {apps.length === 0 ? (
-              <div style={{ background: 'white', borderRadius: '16px', padding: '48px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
-                <div style={{ fontSize: '48px', marginBottom: '12px' }}>📭</div>
-                <div style={{ color: '#64748b' }}>Заявок пока нет</div>
-              </div>
-            ) : apps.map(app => (
-              <div key={app.id} style={{ background: 'white', borderRadius: '14px', padding: '16px', marginBottom: '12px', borderLeft: `5px solid ${statusColor(app.status)}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', background: statusBg(app.status), color: statusText(app.status) }}>{app.status}</span>
-                  <span style={{ color: '#94a3b8', fontSize: '12px' }}>{new Date(app.created_at).toLocaleDateString('ru-RU')}</span>
-                </div>
-                <div style={{ color: '#64748b', fontSize: '13px' }}>📄 {app.file_names?.join(", ")}</div>
-                {app.comment && <div style={{ marginTop: '8px', padding: '8px 12px', background: '#fef2f2', borderRadius: '8px', color: '#dc2626', fontSize: '13px' }}>💬 {app.comment}</div>}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ЧАТ */}
-        {activeTab === "chat" && (
-          <div style={{ maxWidth: '720px', height: isMobile ? 'calc(100vh - 180px)' : 'calc(100vh - 160px)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ flex: 1, background: 'white', borderRadius: '16px', border: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid #e5e7eb', background: '#f8fafc' }}>
-                <div style={{ fontWeight: '600', color: '#1e293b', fontSize: '14px' }}>🤖 ИИ-ассистент Жубанова</div>
-                <div style={{ color: '#64748b', fontSize: '12px' }}>Отвечает на вопросы об университете</div>
-              </div>
-              <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {chatMessages.map((m, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                    <div style={{ maxWidth: '85%', padding: '10px 14px', borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px', background: m.role === 'user' ? 'linear-gradient(135deg, #2563eb, #1d4ed8)' : '#f1f5f9', color: m.role === 'user' ? 'white' : '#1e293b', fontSize: '14px', lineHeight: '1.5' }}>
-                      {m.content}
-                    </div>
-                  </div>
-                ))}
-                {chatLoading && <div style={{ display: 'flex' }}><div style={{ padding: '10px 14px', background: '#f1f5f9', borderRadius: '18px 18px 18px 4px', color: '#64748b', fontSize: '14px' }}>⏳ Думаю...</div></div>}
-                <div ref={chatEndRef} />
-              </div>
-              <div style={{ padding: '12px', borderTop: '1px solid #e5e7eb', display: 'flex', gap: '8px' }}>
-                <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} placeholder="Напишите вопрос..." style={{ flex: 1, padding: '11px 14px', border: '1px solid #e5e7eb', borderRadius: '12px', outline: 'none', fontSize: '14px', color: '#1e293b' }} />
-                <button onClick={sendChat} disabled={chatLoading} style={{ padding: '11px 16px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: '600' }}>➤</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ПРОФИЛЬ */}
-        {activeTab === "profile" && (
-          <div style={{ maxWidth: '500px' }}>
-            <div style={{ background: 'white', borderRadius: '16px', padding: isMobile ? '20px 16px' : '32px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid #e5e7eb' }}>
-              <h2 style={{ color: '#1e293b', marginBottom: '24px', fontSize: isMobile ? '17px' : '20px' }}>Мой профиль</h2>
-
-              {/* Аватар */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '28px' }}>
-                <div style={{ width: '90px', height: '90px', borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #1e3a5f, #2563eb)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', cursor: 'pointer' }}
-                  onClick={() => fileInputRef.current?.click()}>
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <span style={{ color: 'white', fontWeight: '700', fontSize: '36px' }}>{student.name?.[0]}</span>
-                  )}
-                </div>
-                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatar} style={{ display: 'none' }} />
-                <button onClick={() => fileInputRef.current?.click()}
-                  style={{ padding: '7px 16px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', color: '#0369a1', fontSize: '13px', cursor: 'pointer', fontWeight: '500' }}>
-                  📷 Изменить фото
-                </button>
-              </div>
-
-              {/* Поля */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={{ display: 'block', color: '#64748b', fontSize: '13px', marginBottom: '6px', fontWeight: '500' }}>ФИО</label>
-                  <input value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})}
-                    style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', color: '#64748b', fontSize: '13px', marginBottom: '6px', fontWeight: '500' }}>Группа</label>
-                  <input value={profileForm.group_name} onChange={e => setProfileForm({...profileForm, group_name: e.target.value})}
-                    style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#1e293b', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', color: '#64748b', fontSize: '13px', marginBottom: '6px', fontWeight: '500' }}>Email</label>
-                  <input value={student.email || student.login} disabled
-                    style={{ width: '100%', padding: '12px 16px', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#94a3b8', fontSize: '14px', outline: 'none', boxSizing: 'border-box', background: '#f8fafc' }} />
-                </div>
-
-                <button onClick={saveProfile} disabled={profileLoading}
-                  style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '15px', cursor: profileLoading ? 'not-allowed' : 'pointer', opacity: profileLoading ? 0.7 : 1, marginTop: '8px' }}>
-                  {profileLoading ? "⏳ Сохраняем..." : "💾 Сохранить изменения"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  if (isMobile) {
+  if (loading || !student) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: "'Inter', sans-serif" }}>
-        {mainContent}
-        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'white', borderTop: '1px solid #e5e7eb', display: 'flex', zIndex: 100, boxShadow: '0 -4px 20px rgba(0,0,0,0.08)' }}>
-          {navItems.map(item => (
-            <button key={item.id} onClick={() => { setActiveTab(item.id); if(item.id==='status') loadApps(student.login); }}
-              style={{ flex: 1, padding: '10px 4px', border: 'none', background: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-              <span style={{ fontSize: '20px' }}>{item.icon}</span>
-              <span style={{ fontSize: '10px', fontWeight: activeTab === item.id ? '700' : '400', color: activeTab === item.id ? '#2563eb' : '#94a3b8' }}>{item.label}</span>
-              {activeTab === item.id && <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#2563eb' }} />}
-            </button>
-          ))}
-          <button onClick={() => { localStorage.removeItem("current_session"); router.push("/auth"); }}
-            style={{ flex: 1, padding: '10px 4px', border: 'none', background: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-            <span style={{ fontSize: '20px' }}>🚪</span>
-            <span style={{ fontSize: '10px', color: '#ef4444' }}>Выйти</span>
-          </button>
+      <div className="flex min-h-screen items-center justify-center bg-[color:var(--background)]">
+        <div className="flex flex-col items-center gap-3">
+          <GraduationCap size={36} className="animate-pulse text-blue-600" />
+          <div className="text-sm text-slate-500">Загрузка кабинета…</div>
         </div>
       </div>
     );
   }
 
+  const inputClass =
+    "card w-full rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 transition placeholder:text-slate-400";
+
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: "'Inter', sans-serif" }}>
-      <div style={{ width: '260px', background: 'linear-gradient(180deg, #1e3a5f 0%, #2563eb 100%)', display: 'flex', flexDirection: 'column', boxShadow: '4px 0 20px rgba(0,0,0,0.15)', flexShrink: 0 }}>
-        <div style={{ padding: '30px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-          <div onClick={() => setActiveTab('profile')} style={{ cursor: 'pointer' }}>
-            <div style={{ width: '56px', height: '56px', borderRadius: '50%', overflow: 'hidden', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}>
-              {avatarUrl ? <img src={avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: 'white', fontWeight: '700', fontSize: '22px' }}>{student.name?.[0]}</span>}
+    <div className="flex min-h-screen bg-[color:var(--background)]">
+      {/* Боковая панель (десктоп) */}
+      <aside className="hidden w-64 shrink-0 flex-col bg-gradient-to-b from-blue-950 to-blue-900 text-white md:flex">
+        <div className="border-b border-white/10 p-6 text-center">
+          <button onClick={() => setActiveTab("profile")} className="group mx-auto block">
+            <div className="mx-auto h-16 w-16 overflow-hidden rounded-full bg-white/20 shadow-lg">
+              {avatarUrl
+                ? <img src={avatarUrl} alt="Аватар" className="h-full w-full object-cover" />
+                : <div className="flex h-full w-full items-center justify-center text-xl font-bold">{student.name?.[0] ?? "?"}</div>}
             </div>
-            <div style={{ textAlign: 'center', marginTop: '12px' }}>
-              <div style={{ color: 'white', fontWeight: '600', fontSize: '15px' }}>{student.name}</div>
-              <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px', marginTop: '3px' }}>{student.group_name || student.login}</div>
-            </div>
-          </div>
+            <div className="mt-3 text-sm font-semibold group-hover:underline">{student.name}</div>
+            <div className="text-[11px] text-blue-300">{student.group_name || student.email}</div>
+          </button>
         </div>
-        <nav style={{ flex: 1, padding: '16px 12px' }}>
-          {[{ id: "menu", icon: "🏠", label: "Главная" }, { id: "chat", icon: "🤖", label: "ИИ-ассистент" }, { id: "profile", icon: "👤", label: "Мой профиль" }].map(item => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)}
-              style={{ width: '100%', padding: '12px 16px', marginBottom: '6px', border: 'none', borderRadius: '10px', background: activeTab === item.id ? 'rgba(255,255,255,0.2)' : 'transparent', color: 'white', fontWeight: activeTab === item.id ? '600' : '400', fontSize: '14px', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span>{item.icon}</span> {item.label}
+        <nav className="flex-1 space-y-1 p-3">
+          {TABS.map((tab) => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-left text-sm transition ${
+                activeTab === tab.id ? "bg-white/15 font-semibold" : "hover:bg-white/8"
+              }`}>
+              <span>{tab.icon}</span> {tab.label}
             </button>
           ))}
         </nav>
-        <div style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <button onClick={() => router.push("/")}
-            style={{ width: '100%', padding: '11px', border: '1px solid rgba(255,255,255,0.3)', color: 'rgba(255,255,255,0.9)', borderRadius: '10px', backgroundColor: 'rgba(255,255,255,0.1)', cursor: 'pointer', fontSize: '14px', fontWeight: '500' }}>
-            🏠 На главную
-          </button>
-          <button onClick={() => { localStorage.removeItem("current_session"); router.push("/auth"); }}
-            style={{ width: '100%', padding: '11px', border: '1px solid rgba(255,255,255,0.3)', color: 'rgba(255,255,255,0.8)', borderRadius: '10px', backgroundColor: 'transparent', cursor: 'pointer', fontSize: '14px' }}>
-            Выйти
+        <div className="p-3">
+          <button onClick={signOut}
+            className="flex w-full items-center gap-3 rounded-xl border border-white/20 px-4 py-2.5 text-sm text-blue-200 transition hover:bg-white/10">
+            <LogOut size={15} /> Выйти
           </button>
         </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
+        {/* Мобильная нижняя навигация */}
+        <nav className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-[color:var(--border)] bg-[color:var(--card)] md:hidden">
+          {TABS.map((tab) => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] ${
+                activeTab === tab.id ? "font-bold text-blue-600" : "text-slate-400"
+              }`}>
+              <span className="text-lg">{tab.icon}</span> {tab.label}
+            </button>
+          ))}
+        </nav>
+
+        <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
+          {/* Главная */}
+          {activeTab === "home" && (
+            <div className="space-y-4">
+              <div className="rounded-2xl bg-gradient-to-br from-blue-700 to-indigo-600 p-6 text-white shadow-lg">
+                <h1 className="text-lg font-bold">Сәлеметсіз бе, {student.name.split(" ")[0]}! 👋</h1>
+                <p className="mt-1 text-sm text-blue-100">
+                  Платформа академической мобильности АРСУ. Подайте заявку и следите за её статусом.
+                </p>
+                <button onClick={() => setActiveTab("apply")}
+                  className="mt-4 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-semibold backdrop-blur transition hover:bg-white/25">
+                  📤 Подать заявку
+                </button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <button onClick={() => setActiveTab("status")} className="card rounded-2xl p-4 text-left shadow-sm transition hover:border-blue-400">
+                  <div className="text-2xl font-bold text-blue-600">{apps.length}</div>
+                  <div className="mt-1 text-xs text-slate-500">Мои заявки</div>
+                </button>
+                <button onClick={() => setActiveTab("chat")} className="card rounded-2xl p-4 text-left shadow-sm transition hover:border-blue-400">
+                  <div className="text-2xl font-bold text-indigo-600">🤖</div>
+                  <div className="mt-1 text-xs text-slate-500">Спросить ИИ-ассистента</div>
+                </button>
+                <button onClick={() => setActiveTab("profile")} className="card rounded-2xl p-4 text-left shadow-sm transition hover:border-blue-400">
+                  <div className="text-2xl font-bold text-teal-600">👤</div>
+                  <div className="mt-1 text-xs text-slate-500">Заполнить профиль</div>
+                </button>
+              </div>
+
+              {apps[0] && (
+                <div className="card rounded-2xl p-4 shadow-sm">
+                  <h3 className="mb-3 text-xs font-semibold text-slate-500">Последняя заявка</h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold">{apps[0].university_name}</span>
+                    <StatusBadge status={apps[0].status} />
+                  </div>
+                  <div className="mt-3"><StatusTimeline status={apps[0].status} /></div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Подача заявки */}
+          {activeTab === "apply" && (
+            <div className="card rounded-2xl p-5 shadow-sm">
+              <h1 className="text-base font-bold">📤 Новая заявка на мобильность</h1>
+              <p className="mt-1 text-xs text-slate-500">
+                Заявка уйдёт на проверку факультету, далее — департаменту.
+              </p>
+
+              <div className="mt-4 space-y-3">
+                <input value={appForm.university_name} onChange={(e) => setAppForm({ ...appForm, university_name: e.target.value })}
+                  placeholder="Университет назначения *" className={inputClass} />
+                <textarea value={appForm.purpose} onChange={(e) => setAppForm({ ...appForm, purpose: e.target.value })}
+                  placeholder="Цель поездки (обучение по программе, кредиты…) *" rows={3}
+                  className={`${inputClass} resize-none`} />
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="text-xs text-slate-500">
+                    Начало *
+                    <input type="date" value={appForm.date_from} onChange={(e) => setAppForm({ ...appForm, date_from: e.target.value })}
+                      className={`${inputClass} mt-1`} />
+                  </label>
+                  <label className="text-xs text-slate-500">
+                    Конец *
+                    <input type="date" value={appForm.date_to} onChange={(e) => setAppForm({ ...appForm, date_to: e.target.value })}
+                      className={`${inputClass} mt-1`} />
+                  </label>
+                </div>
+
+                <FileUpload files={files} setFiles={setFiles} />
+
+                <button onClick={sendApplication} disabled={sending}
+                  className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-700 disabled:opacity-60">
+                  {sending ? "⏳ Отправляем…" : "Отправить заявку"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Мои заявки */}
+          {activeTab === "status" && (
+            <div className="space-y-3">
+              <h1 className="text-base font-bold">📊 Мои заявки</h1>
+              {apps.length === 0 ? (
+                <div className="card rounded-2xl p-10 text-center text-sm text-slate-500">
+                  Заявок пока нет. <button onClick={() => setActiveTab("apply")} className="text-blue-600 hover:underline">Подать первую →</button>
+                </div>
+              ) : (
+                apps.map((app) => (
+                  <article key={app.id} className="card rounded-2xl p-4 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-sm font-semibold">{app.university_name}</span>
+                      <StatusBadge status={app.status} />
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      📅 {new Date(app.date_from).toLocaleDateString("ru-RU")} — {new Date(app.date_to).toLocaleDateString("ru-RU")} · подана {new Date(app.created_at).toLocaleDateString("ru-RU")}
+                    </div>
+                    <div className="mt-3"><StatusTimeline status={app.status} /></div>
+                    {(app.status === STATUS.REJECTED || app.status === STATUS.FACULTY_REJECTED) &&
+                      (app.dept_comment || app.faculty_comment) && (
+                        <div className="mt-2 rounded-lg bg-red-50 p-3 text-xs text-red-700">
+                          💬 Причина: {app.dept_comment || app.faculty_comment}
+                        </div>
+                      )}
+                    {app.file_names.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {app.file_names.map((name, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+                            <FileText size={10} /> {name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* ИИ-ассистент */}
+          {activeTab === "chat" && (
+            <div className="card flex h-[calc(100vh-120px)] flex-col overflow-hidden rounded-2xl shadow-sm md:h-[calc(100vh-48px)]">
+              <div className="flex items-center gap-2 border-b border-[color:var(--border)] p-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white">
+                  <Bot size={17} />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold">ИИ-ассистент АРСУ</div>
+                  <div className="text-[11px] text-slate-400">Отвечает на вопросы о мобильности</div>
+                </div>
+              </div>
+              <div className="flex-1 space-y-4 overflow-y-auto p-4 no-scrollbar">
+                {chatMessages.map((m, i) => (
+                  <div key={i} className={`flex gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                    {m.role === "assistant" && (
+                      <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white">
+                        <Bot size={14} />
+                      </div>
+                    )}
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap ${
+                      m.role === "user" ? "bg-blue-600 text-white rounded-br-md" : "card rounded-bl-md"
+                    }`}>
+                      {m.content}
+                      {chatLoading && m.role === "assistant" && m.content === "" && (
+                        <span className="inline-flex animate-pulse gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                        </span>
+                      )}
+                    </div>
+                    {m.role === "user" && (
+                      <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-300 text-slate-600">
+                        <UserIcon size={14} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+              <div className="flex items-end gap-2 border-t border-[color:var(--border)] p-3">
+                <textarea rows={1} value={chatInput} onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+                  placeholder="Спросите что-нибудь…"
+                  className="max-h-32 flex-1 resize-none rounded-xl bg-transparent px-3 py-2.5 text-sm outline-none no-scrollbar" />
+                <button onClick={sendChat} disabled={chatLoading} aria-label="Отправить"
+                  className="rounded-xl bg-blue-600 p-2.5 text-white transition hover:bg-blue-700 disabled:opacity-50">
+                  <Send size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Профиль */}
+          {activeTab === "profile" && (
+            <div className="card rounded-2xl p-5 shadow-sm">
+              <h1 className="text-base font-bold">👤 Мой профиль</h1>
+
+              {/* Аватар */}
+              <div className="mt-4 flex items-center gap-4">
+                <button onClick={() => avatarInputRef.current?.click()} className="group relative" aria-label="Сменить аватар">
+                  <div className="h-20 w-20 overflow-hidden rounded-full bg-slate-200 shadow-md">
+                    {avatarUrl
+                      ? <img src={avatarUrl} alt="Аватар" className="h-full w-full object-cover" />
+                      : <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-slate-500">{student.name?.[0] ?? "?"}</div>}
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-white shadow transition group-hover:bg-blue-700">
+                    <Camera size={13} />
+                  </div>
+                </button>
+                <input ref={avatarInputRef} type="file" accept="image/*" hidden onChange={() => saveProfile()} />
+                <div className="text-xs text-slate-500">
+                  <div className="font-medium text-slate-700">{student.email}</div>
+                  <div className="mt-0.5">Нажмите на аватар, чтобы сменить фото</div>
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                <input value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                  placeholder="ФИО *" className={inputClass} />
+                <input value={profileForm.group_name} onChange={(e) => setProfileForm({ ...profileForm, group_name: e.target.value })}
+                  placeholder="Группа (например IT-202)" className={inputClass} />
+                <button onClick={saveProfile} disabled={savingProfile}
+                  className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-700 disabled:opacity-60">
+                  {savingProfile ? "⏳ Сохраняем…" : "Сохранить"}
+                </button>
+              </div>
+
+              <div className="card mt-5 rounded-xl p-3 text-xs text-slate-500">
+                <div className="flex items-center gap-1.5 font-medium text-slate-700">
+                  <Milestone size={13} /> Как это работает
+                </div>
+                <div className="mt-1.5 flex items-start gap-1.5">
+                  <MapPin size={12} className="mt-0.5 shrink-0 text-blue-500" />
+                  Заявка проходит: факультет → департамент → тестирование → интервью → решение.
+                  На каждом шаге придёт письмо на {student.email}.
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
       </div>
-      {mainContent}
     </div>
   );
 }

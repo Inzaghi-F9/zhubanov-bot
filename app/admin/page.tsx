@@ -1,333 +1,295 @@
 "use client";
+
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { GraduationCap, LogOut, RefreshCw, ChevronDown, ChevronUp, FileText, Search } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { signOut } from "@/lib/auth";
+import { STATUS, ADMIN_STATUSES, STATUS_FLOW, type DbStatus } from "@/lib/statuses";
+import { StatusBadge } from "@/components/StatusBadge";
+import { StatusTimeline } from "@/components/StatusTimeline";
+import { getDocumentUrl } from "@/lib/storage";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
+} from "recharts";
 import toast from "react-hot-toast";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import type { Application } from "@/lib/types";
+
+const PIE_COLORS = ["#22c55e", "#f59e0b", "#ef4444"];
 
 export default function AdminDashboard() {
-  const router = useRouter();
-  const [apps, setApps] = useState<any[]>([]);
+  const supabase = createClient();
+
+  const [apps, setApps] = useState<Application[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("все");
+  const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [commentId, setCommentId] = useState<string | null>(null);
   const [text, setText] = useState("");
-  const [scheduleId, setScheduleId] = useState<string | null>(null);
-const [scheduleType, setScheduleType] = useState<"test" | "interview" | null>(null);
-const [scheduleDate, setScheduleDate] = useState("");
-const [scheduleTime, setScheduleTime] = useState("");
-const [scheduleLocation, setScheduleLocation] = useState("");
-  const [filter, setFilter] = useState("все");
-  const [isMobile, setIsMobile] = useState(false);
+  const [urls, setUrls] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
-
-  useEffect(() => {
-    const session = localStorage.getItem("current_session");
-    if (!session) { router.push("/auth"); return; }
-    const s = JSON.parse(session);
-    if (s.role !== "admin") { router.push("/dashboard"); return; }
     loadApps();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadApps = async () => {
-  const { data } = await supabase
-    .from("applications")
-    .select("*")
-    .in("status", [
-      "Рекомендован факультетом",
-      "На рассмотрении (департамент)",
-      "Приглашены на тестирование",
-      "Приглашены на интервью",
-      "Принято",
-      "Ошибка"
-    ])
-    .order("created_at", { ascending: false });
-  if (data) setApps(data);
-};
-
-  const update = async (id: string, status: string, comment: string = "") => {
-    await supabase.from("applications").update({ status, comment }).eq("id", id);
-    const app = apps.find(a => a.id === id);
-    if (app?.student_login) {
-      const { data: user } = await supabase.from("users").select("email, name").eq("login", app.student_login).single();
-      if (user?.email) {
-        await fetch("/api/notify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ studentEmail: user.email, studentName: user.name, status, comment }),
-        });
-      }
-    }
-    const messages: Record<string, string> = {
-  "Принято": "✅ Заявка принята!",
-  "Ошибка": "⚠️ Ошибка отправлена студенту",
-  "Рекомендован факультетом": "🎓 Студент рекомендован",
-  "Приглашены на тестирование": "📝 Приглашение на тестирование отправлено",
-  "Приглашены на интервью": "🎤 Приглашение на интервью отправлено",
-};
-toast.success(messages[status] || "Статус обновлён!");
-    setCommentId(null); setText(""); loadApps();
+    setLoading(true);
+    // RLS: admin видит все заявки после факультета
+    const { data } = await supabase
+      .from("applications")
+      .select("*")
+      .in("status", ADMIN_STATUSES)
+      .order("created_at", { ascending: false });
+    if (data) setApps(data as Application[]);
+    setLoading(false);
   };
-  const scheduleEvent = async (id: string) => {
-  if (!scheduleDate || !scheduleTime) { toast.error("Укажите дату и время"); return; }
-  const status = scheduleType === "test" ? "Приглашены на тестирование" : "Приглашены на интервью";
-  const dateStr = new Date(`${scheduleDate}T${scheduleTime}`).toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const comment = `Дата: ${dateStr}${scheduleLocation ? `. Место: ${scheduleLocation}` : ''}`;
 
-  await supabase.from("applications").update({ status, comment }).eq("id", id);
+  const update = async (id: string, status: DbStatus, comment: string = "") => {
+    const app = apps.find((a) => a.id === id);
+    const { error } = await supabase
+      .from("applications")
+      .update({ status, dept_comment: comment })
+      .eq("id", id);
+    if (error) { toast.error("Ошибка обновления"); return; }
 
-  const app = apps.find(a => a.id === id);
-  if (app?.student_login) {
-    const { data: user } = await supabase.from("users").select("email, name").eq("login", app.student_login).single();
-    if (user?.email) {
+    if (app) {
       await fetch("/api/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentEmail: user.email, studentName: user.name, status, comment }),
+        body: JSON.stringify({
+          studentEmail: app.student_email,
+          studentName: app.student_name,
+          status,
+          comment,
+        }),
       });
     }
-  }
-
-  toast.success(`${scheduleType === "test" ? "Тестирование" : "Интервью"} назначено!`);
-  setScheduleId(null); setScheduleType(null);
-  setScheduleDate(""); setScheduleTime(""); setScheduleLocation("");
-  loadApps();
-};
-
-  const filtered = filter === "все" ? apps : apps.filter(a => a.status === filter);
-  const counts = {
-    все: apps.length,
-    "На проверке": apps.filter(a => a.status === "На проверке").length,
-    "Принято": apps.filter(a => a.status === "Принято").length,
-    "Ошибка": apps.filter(a => a.status === "Ошибка").length,
+    toast.success("Статус обновлён, письмо отправлено");
+    setCommentId(null); setText(""); loadApps();
   };
 
+  const showFiles = async (app: Application) => {
+    const willExpand = expanded !== app.id;
+    setExpanded(willExpand ? app.id : null);
+    if (!willExpand || app.file_paths.length === 0) return;
+
+    const nextUrls = { ...urls };
+    for (const path of app.file_paths) {
+      if (!nextUrls[path]) nextUrls[path] = (await getDocumentUrl(path)) ?? "";
+    }
+    setUrls(nextUrls);
+  };
+
+  // Поиск по имени, вузу или email
+  const searched = search.trim()
+    ? apps.filter((a) =>
+        [a.student_name, a.university_name, a.student_email].some((v) =>
+          v.toLowerCase().includes(search.toLowerCase())
+        )
+      )
+    : apps;
+  const filtered = filter === "все" ? searched : searched.filter((a) => a.status === filter);
+
+  // Статистика для графиков
   const pieData = [
-    { name: 'На проверке', value: counts['На проверке'] },
-    { name: 'Принято', value: counts['Принято'] },
-    { name: 'Ошибка', value: counts['Ошибка'] },
-  ].filter(d => d.value > 0);
+    { name: "Принято", value: searched.filter((a) => a.status === STATUS.ACCEPTED).length },
+    { name: "В процессе", value: searched.filter((a) => ([STATUS.ACCEPTED, STATUS.REJECTED] as string[]).includes(a.status) === false).length },
+    { name: "Отклонено", value: searched.filter((a) => a.status === STATUS.REJECTED).length },
+  ].filter((d) => d.value > 0);
 
   const barData = Object.entries(
-    apps.reduce((acc: any, app) => {
+    searched.reduce((acc: Record<string, number>, app) => {
       if (app.university_name) {
-        const key = app.university_name.length > 15 ? app.university_name.slice(0, 15) + '...' : app.university_name;
-        acc[key] = (acc[key] || 0) + 1;
+        const key = app.university_name.length > 18 ? app.university_name.slice(0, 18) + "…" : app.university_name;
+        acc[key] = (acc[key] ?? 0) + 1;
       }
       return acc;
     }, {})
-  ).map(([name, value]) => ({ name, value })).sort((a: any, b: any) => b.value - a.value).slice(0, 5);
+  )
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 5);
 
-  const statusColor = (s: string) => s === 'Принято' ? '#22c55e' : s === 'Ошибка' ? '#ef4444' : '#f59e0b';
-  const statusBg = (s: string) => s === 'Принято' ? '#dcfce7' : s === 'Ошибка' ? '#fee2e2' : '#fef9c3';
-  const statusText = (s: string) => s === 'Принято' ? '#16a34a' : s === 'Ошибка' ? '#dc2626' : '#ca8a04';
+  const stages = STATUS_FLOW.map((s) => ({ stage: s, count: searched.filter((a) => a.status === s).length }));
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f0f4f8', fontFamily: "'Inter', sans-serif" }}>
+    <div className="min-h-screen bg-[color:var(--background)]">
       {/* Header */}
-      <div style={{ background: 'linear-gradient(135deg, #1e3a5f, #2563eb)', padding: isMobile ? '0 16px' : '0 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', height: '60px', position: 'sticky', top: 0, zIndex: 100 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ fontSize: '20px' }}>🎓</div>
-          <div>
-            <div style={{ color: 'white', fontWeight: '700', fontSize: isMobile ? '14px' : '16px' }}>ARSU Admin</div>
-            {!isMobile && <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>Панель управления заявками</div>}
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button onClick={loadApps} style={{ background: 'rgba(255,255,255,0.15)', color: 'white', border: 'none', padding: '7px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>🔄</button>
-          <button onClick={() => { localStorage.removeItem("current_session"); router.push("/auth"); }}
-            style={{ background: 'rgba(239,68,68,0.2)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)', padding: '7px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>
-            Выйти
-          </button>
-        </div>
-      </div>
-
-      <div style={{ padding: isMobile ? '16px' : '28px 32px' }}>
-        {/* Карточки статистики */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
-          {[
-            { label: 'Всего', value: counts['все'], color: '#2563eb', icon: '📋' },
-            { label: 'На проверке', value: counts['На проверке'], color: '#d97706', icon: '⏳' },
-            { label: 'Принято', value: counts['Принято'], color: '#16a34a', icon: '✅' },
-            { label: 'С ошибкой', value: counts['Ошибка'], color: '#dc2626', icon: '❌' },
-          ].map(stat => (
-            <div key={stat.label} style={{ background: 'white', borderRadius: '12px', padding: '16px', border: '1px solid #e5e7eb', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ color: '#64748b', fontSize: '12px', marginBottom: '4px' }}>{stat.label}</div>
-                  <div style={{ color: stat.color, fontSize: '28px', fontWeight: '700' }}>{stat.value}</div>
-                </div>
-                <div style={{ fontSize: '24px' }}>{stat.icon}</div>
-              </div>
+      <header className="sticky top-0 z-50 bg-gradient-to-r from-blue-800 to-indigo-700 text-white shadow-lg">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <GraduationCap size={22} />
+            <div>
+              <div className="text-sm font-bold">ARSU Admin</div>
+              <div className="text-[11px] text-blue-200">Департамент академической мобильности</div>
             </div>
-          ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={loadApps} aria-label="Обновить" className="rounded-lg p-2 transition hover:bg-white/10">
+              <RefreshCw size={16} />
+            </button>
+            <button onClick={signOut} aria-label="Выйти"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/30 px-3 py-1.5 text-xs transition hover:bg-white/10">
+              <LogOut size={13} /> Выйти
+            </button>
+          </div>
         </div>
+      </header>
 
-        {/* Графики */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
-          <div style={{ background: 'white', borderRadius: '14px', padding: '20px', border: '1px solid #e5e7eb', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-            <h3 style={{ color: '#1e293b', fontSize: '15px', fontWeight: '600', margin: '0 0 16px 0' }}>📊 По статусам</h3>
-            {pieData.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '30px', fontSize: '13px' }}>Нет данных</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" outerRadius={75} dataKey="value" label={({ name, value }) => `${name}: ${value}`} labelLine={false}>
-                    <Cell fill="#f59e0b" />
-                    <Cell fill="#22c55e" />
-                    <Cell fill="#ef4444" />
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
-          <div style={{ background: 'white', borderRadius: '14px', padding: '20px', border: '1px solid #e5e7eb', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-            <h3 style={{ color: '#1e293b', fontSize: '15px', fontWeight: '600', margin: '0 0 16px 0' }}>🏫 Популярные университеты</h3>
-            {barData.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '30px', fontSize: '13px' }}>Нет данных</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={barData}>
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#2563eb" radius={[6, 6, 0, 0]} name="Заявок" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
+      <main className="mx-auto max-w-6xl px-4 py-6">
+        {/* Поиск */}
+        <div className="relative mb-5">
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Поиск по имени, вузу или email…"
+            className="card w-full rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none focus:border-blue-500 transition" />
         </div>
 
         {/* Фильтры */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', overflowX: 'auto', paddingBottom: '4px' }}>
-          {['все', 'На проверке', 'Принято', 'Ошибка'].map(f => (
-            <button key={f} onClick={() => setFilter(f)} style={{ padding: '7px 14px', borderRadius: '20px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '500', background: filter === f ? '#2563eb' : 'white', color: filter === f ? 'white' : '#64748b', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-              {f === 'все' ? 'Все' : f} ({counts[f as keyof typeof counts] ?? 0})
+        <div className="mb-5 flex flex-wrap gap-2">
+          {["все", ...ADMIN_STATUSES].map((f) => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
+                filter === f ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/25" : "card hover:border-indigo-400"
+              }`}>
+              {f === "все" ? `Все (${apps.length})` : f}
             </button>
           ))}
         </div>
 
+        {/* Графики */}
+        {pieData.length > 0 && (
+          <div className="mb-6 grid gap-4 md:grid-cols-2">
+            <div className="card rounded-2xl p-4 shadow-sm">
+              <h3 className="mb-2 text-xs font-semibold text-slate-500">Заявки по вузам (топ-5)</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={barData}>
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={45} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <Tooltip wrapperClassName="card !rounded-xl !text-xs" />
+                  <Bar dataKey="value" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="card rounded-2xl p-4 shadow-sm">
+              <h3 className="mb-2 text-xs font-semibold text-slate-500">Итоги заявок</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={3}>
+                    {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip wrapperClassName="card !rounded-xl !text-xs" />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {/* Стадии конвейера */}
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {stages.map(({ stage, count }) => (
+            <div key={stage} className="card rounded-2xl p-3 text-center shadow-sm">
+              <div className="text-2xl font-bold text-indigo-600">{count}</div>
+              <div className="mt-1 text-[10px] leading-tight text-slate-500">{stage}</div>
+            </div>
+          ))}
+        </div>
+
         {/* Список заявок */}
-        {filtered.length === 0 ? (
-          <div style={{ background: 'white', borderRadius: '16px', padding: '48px', textAlign: 'center', border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: '40px', marginBottom: '12px' }}>📭</div>
-            <div style={{ color: '#64748b' }}>Заявок нет</div>
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => <div key={i} className="card h-28 animate-pulse rounded-2xl" />)}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="card rounded-2xl p-10 text-center text-sm text-slate-500">
+            {search || filter !== "все" ? "Ничего не найдено 🔍" : "Заявок пока нет 🎓"}
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {filtered.map(app => (
-              <div key={app.id} style={{ background: 'white', borderRadius: '14px', padding: isMobile ? '16px' : '20px 24px', border: '1px solid #e5e7eb', borderLeft: `5px solid ${statusColor(app.status)}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                  <div style={{ width: '40px', height: '40px', background: 'linear-gradient(135deg, #2563eb, #7c3aed)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '700', fontSize: '16px', flexShrink: 0 }}>
-                    {app.student_name?.[0]}
+          <div className="space-y-3">
+            {filtered.map((app) => (
+              <article key={app.id} className="card overflow-hidden rounded-2xl shadow-sm">
+                <button onClick={() => showFiles(app)}
+                  className="flex w-full items-center justify-between gap-3 p-4 text-left transition hover:bg-slate-50">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold">{app.student_name}</span>
+                      <StatusBadge status={app.status} />
+                    </div>
+                    <div className="mt-1 truncate text-xs text-slate-500">
+                      🏫 {app.university_name} · 📅 {new Date(app.date_from).toLocaleDateString("ru-RU")} — {new Date(app.date_to).toLocaleDateString("ru-RU")}
+                      {app.file_paths.length > 0 && <> · 📎 {app.file_paths.length}</>}
+                    </div>
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: '600', color: '#1e293b', fontSize: '15px' }}>{app.student_name}</div>
-                    <div style={{ color: '#94a3b8', fontSize: '12px' }}>{app.student_login} · {new Date(app.created_at).toLocaleDateString('ru-RU')}</div>
-                  </div>
-                  <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', background: statusBg(app.status), color: statusText(app.status), flexShrink: 0 }}>
-                    {app.status}
-                  </span>
-                </div>
+                  {expanded === app.id ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
+                </button>
 
-                {(app.purpose || app.university_name || app.date_from) && (
-                  <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {app.university_name && <div style={{ fontSize: '13px', color: '#1e293b' }}>🏫 <strong>Университет:</strong> {app.university_name}</div>}
-                    {app.date_from && app.date_to && <div style={{ fontSize: '13px', color: '#1e293b' }}>📅 <strong>Сроки:</strong> {new Date(app.date_from).toLocaleDateString('ru-RU')} — {new Date(app.date_to).toLocaleDateString('ru-RU')}</div>}
-                    {app.purpose && <div style={{ fontSize: '13px', color: '#1e293b' }}>🎯 <strong>Цель:</strong> {app.purpose}</div>}
+                {expanded === app.id && (
+                  <div className="border-t border-[color:var(--border)] p-4">
+                    <StatusTimeline status={app.status} />
+
+                    <div className="card mt-3 space-y-1.5 rounded-xl p-3 text-sm">
+                      <div>🎯 <strong>Цель:</strong> {app.purpose}</div>
+                      <div>🏫 <strong>Университет:</strong> {app.university_name}</div>
+                      <div>📧 <strong>Email:</strong> {app.student_email}</div>
+                      {app.faculty_comment && <div>💬 <strong>Комментарий факультета:</strong> {app.faculty_comment}</div>}
+                    </div>
+
+                    {app.file_paths.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {app.file_paths.map((path, i) => (
+                          <a key={path} href={urls[path] || "#"} target="_blank" rel="noreferrer"
+                            className={`inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700 transition ${urls[path] ? "hover:bg-blue-100" : "opacity-50"}`}>
+                            <FileText size={12} /> {app.file_names[i] ?? path.split("/").pop()}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+
+                    {commentId === app.id ? (
+                      <div className="mt-3 flex flex-col gap-2">
+                        <input value={text} onChange={(e) => setText(e.target.value)}
+                          placeholder="Причина (видна студенту в письме)…"
+                          className="card w-full rounded-xl px-3 py-2.5 text-sm outline-none focus:border-red-400" />
+                        <div className="flex gap-2">
+                          <button onClick={() => update(app.id, STATUS.REJECTED, text)}
+                            className="flex-1 rounded-xl bg-red-500 py-2.5 text-xs font-semibold text-white hover:bg-red-600 transition">
+                            Отправить
+                          </button>
+                          <button onClick={() => setCommentId(null)}
+                            className="flex-1 rounded-xl bg-slate-200 py-2.5 text-xs text-slate-600 transition hover:bg-slate-300">
+                            Отмена
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <button onClick={() => update(app.id, STATUS.ACCEPTED)}
+                          className="rounded-xl bg-emerald-500 py-2.5 text-xs font-semibold text-white hover:bg-emerald-600 transition">
+                          ✓ Принять
+                        </button>
+                        <button onClick={() => update(app.id, STATUS.TEST)}
+                          className="rounded-xl bg-violet-500 py-2.5 text-xs font-semibold text-white hover:bg-violet-600 transition">
+                          📝 Тестирование
+                        </button>
+                        <button onClick={() => update(app.id, STATUS.INTERVIEW)}
+                          className="rounded-xl bg-blue-500 py-2.5 text-xs font-semibold text-white hover:bg-blue-600 transition">
+                          🎤 Интервью
+                        </button>
+                        <button onClick={() => setCommentId(app.id)}
+                          className="rounded-xl bg-amber-500 py-2.5 text-xs font-semibold text-white hover:bg-amber-600 transition">
+                          ✗ Ошибка
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
-
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                  {app.file_names?.map((name: string, i: number) => (
-                    <a key={i} href={app.file_urls[i]} download={name} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', color: '#0369a1', fontSize: '12px', textDecoration: 'none' }}>
-                      💾 {name}
-                    </a>
-                  ))}
-                </div>
-
-                {app.comment && (
-                  <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#fef2f2', borderRadius: '8px', color: '#dc2626', fontSize: '13px' }}>
-                    💬 {app.comment}
-                  </div>
-                )}
-
-                {commentId === app.id ? (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-    <input value={text} onChange={e => setText(e.target.value)} placeholder="Причина ошибки..."
-      style={{ padding: '10px 12px', border: '1px solid #fca5a5', borderRadius: '8px', color: '#1e293b', fontSize: '13px', outline: 'none', width: '100%', boxSizing: 'border-box' }} />
-    <div style={{ display: 'flex', gap: '8px' }}>
-      <button onClick={() => update(app.id, "Ошибка", text)} style={{ flex: 1, background: '#ef4444', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>Отправить</button>
-      <button onClick={() => setCommentId(null)} style={{ flex: 1, background: '#e2e8f0', color: '#64748b', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>Отмена</button>
-    </div>
-  </div>
-) : scheduleId === app.id ? (
-  <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0' }}>
-    <h4 style={{ color: '#1e293b', margin: '0 0 14px 0', fontSize: '14px' }}>
-      {scheduleType === "test" ? "📝 Назначить тестирование" : "🎤 Назначить интервью"}
-    </h4>
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-        <div>
-          <label style={{ display: 'block', color: '#64748b', fontSize: '12px', marginBottom: '4px', fontWeight: '500' }}>📅 Дата</label>
-          <input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)}
-            style={{ width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#1e293b', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
-        </div>
-        <div>
-          <label style={{ display: 'block', color: '#64748b', fontSize: '12px', marginBottom: '4px', fontWeight: '500' }}>🕐 Время</label>
-          <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)}
-            style={{ width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#1e293b', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
-        </div>
-      </div>
-      <div>
-        <label style={{ display: 'block', color: '#64748b', fontSize: '12px', marginBottom: '4px', fontWeight: '500' }}>📍 Место проведения</label>
-        <input value={scheduleLocation} onChange={e => setScheduleLocation(e.target.value)}
-          placeholder="Например: Каб. 305, корпус А"
-          style={{ width: '100%', padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#1e293b', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }} />
-      </div>
-      <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-        <button onClick={() => scheduleEvent(app.id)}
-          style={{ flex: 1, background: scheduleType === "test" ? '#7c3aed' : '#2563eb', color: 'white', border: 'none', padding: '11px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>
-          ✓ Подтвердить и отправить
-        </button>
-        <button onClick={() => { setScheduleId(null); setScheduleType(null); setScheduleDate(""); setScheduleTime(""); setScheduleLocation(""); }}
-          style={{ flex: 1, background: '#e2e8f0', color: '#64748b', border: 'none', padding: '11px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>
-          Отмена
-        </button>
-      </div>
-    </div>
-  </div>
-) : (
-  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-    <button onClick={() => update(app.id, "Принято")}
-      style={{ flex: 1, background: '#22c55e', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
-      ✓ Принять
-    </button>
-    <button onClick={() => { setScheduleId(app.id); setScheduleType("test"); }}
-      style={{ flex: 1, background: '#7c3aed', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
-      📝 Тестирование
-    </button>
-    <button onClick={() => { setScheduleId(app.id); setScheduleType("interview"); }}
-      style={{ flex: 1, background: '#2563eb', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
-      🎤 Интервью
-    </button>
-    <button onClick={() => setCommentId(app.id)}
-      style={{ flex: 1, background: '#f59e0b', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: '600', minWidth: '120px' }}>
-      ✗ Ошибка
-    </button>
-  </div>
-)}
-              </div>
+              </article>
             ))}
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }

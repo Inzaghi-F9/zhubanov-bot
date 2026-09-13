@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/client";
 import toast from "react-hot-toast";
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -9,9 +9,10 @@ export default function ResetPasswordPage() {
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const supabase = createClient();
 
   useEffect(() => {
-    // Supabase автоматически обрабатывает токен из URL
+    // Supabase автоматически обрабатывает токен восстановления из URL
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
         // Пользователь перешёл по ссылке из письма — можно менять пароль
@@ -25,15 +26,10 @@ export default function ResetPasswordPage() {
     if (password !== confirm) { toast.error("Пароли не совпадают"); return; }
 
     setLoading(true);
+    // Пароль живёт только в Supabase Auth — шифруется автоматически, дублей нет
     const { error } = await supabase.auth.updateUser({ password });
 
     if (error) { toast.error("Ошибка: " + error.message); setLoading(false); return; }
-
-    // Обновляем пароль и в нашей таблице users
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user?.email) {
-      await supabase.from("users").update({ password }).eq("email", user.email);
-    }
 
     setLoading(false);
     setDone(true);

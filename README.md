@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ARSU Мобильность (zhubanov-bot)
 
-## Getting Started
+Платформа академической мобильности Актюбинского регионального университета
+им. К. Жубанова (АРСУ): подача заявок студентами, проверка факультетом и
+департаментом, ИИ-ассистент на базе Groq (Llama 3.3 70B), email-уведомления Resend.
 
-First, run the development server:
+## Стек
+
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 ·
+Supabase (Auth + PostgreSQL RLS + Storage) · Groq · Resend · Recharts
+
+## Быстрый старт
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # заполни ключи
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Настройка Supabase (обязательно)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Supabase Dashboard → **SQL Editor** → вставь и выполни `supabase/migration.sql`
+   целиком (идемпотентна, старые таблицы переименует в `*_legacy`).
+2. Регистрируй нужные аккаунты через страницу `/auth`, затем назначь роли:
+   ```sql
+   update public.profiles set role = 'admin'   where email = 'admin@arsu.kz';
+   update public.profiles set role = 'faculty' where email = 'faculty@arsu.kz';
+   ```
+3. В Settings → Auth → URL Configuration укажи адрес сайта (для писем сброса пароля).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Безопасность
 
-## Learn More
+- Единая авторизация Supabase Auth — пароли хранятся только зашифрованными,
+  plaintext-дублей нет.
+- Сессия в httpOnly-cookie (`@supabase/ssr`), проверка роли в `middleware.ts`
+  на сервере и **RLS-политиками в PostgreSQL** — клиент физически не может
+  читать чужие заявки или менять статусы.
+- Документы и аватары — в Supabase Storage (приватный bucket `documents`
+  с подписанными ссылками), а не base64 в таблице.
+- `/api/notify` доступен только faculty/admin (проверка сессии на сервере).
+- `/api/chat` защищён rate-limit по IP.
 
-To learn more about Next.js, take a look at the following resources:
+## Деплой
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Оптимально — **Vercel** (API-роуты работают как serverless-функции, ключи
+остаются секретными; GitHub Pages не подходит — там нет серверного рантайма).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Импортируй репозиторий в Vercel.
+2. Environment Variables: все переменные из `.env.example`.
+3. Deploy.
 
-## Deploy on Vercel
+## Структура
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+app/                    страницы (лендинг с чатом, auth, кабинет студента,
+                        кабинет факультета, админка)
+app/api/chat            стриминговый ИИ-ассистент (SSE, база знаний, rate-limit)
+app/api/notify          email-уведомления (только для staff)
+components/             StatusBadge, StatusTimeline, ChatBox, FileUpload
+lib/                    клиенты Supabase, типы, статусы, база знаний, Storage
+supabase/migration.sql  схема БД + RLS + Storage + триггеры
+middleware.ts           серверная защита маршрутов по ролям
+```
