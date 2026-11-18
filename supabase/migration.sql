@@ -57,8 +57,8 @@ create table if not exists public.applications (
   semester        text not null default 'Осень 2026 (1 семестр)',
   university_name text not null,
   purpose         text not null,
-  date_from       date not null,
-  date_to         date not null,
+  date_from       date,
+  date_to         date,
   status          text not null default 'На проверке (факультет)',
   faculty_comment text not null default '',
   dept_comment    text not null default '',
@@ -74,6 +74,8 @@ alter table public.applications add column if not exists student_faculty text;
 alter table public.applications add column if not exists student_phone   text;
 alter table public.applications add column if not exists student_gpa     numeric(3,2);
 alter table public.applications add column if not exists semester        text not null default 'Осень 2026 (1 семестр)';
+alter table public.applications alter column date_from drop not null;
+alter table public.applications alter column date_to   drop not null;
 
 create index if not exists applications_student_idx  on public.applications (student_id);
 create index if not exists applications_status_idx   on public.applications (status);
@@ -107,6 +109,11 @@ create policy "profiles_update_own" on public.profiles
 drop policy if exists "profiles_select_staff" on public.profiles;
 create policy "profiles_select_staff" on public.profiles
   for select using (public.is_staff());
+
+drop policy if exists "profiles_update_admin" on public.profiles;
+create policy "profiles_update_admin" on public.profiles
+  for update using (public.my_role() = 'admin')
+  with check (public.my_role() = 'admin');
 
 drop policy if exists "applications_select_own" on public.applications;
 create policy "applications_select_own" on public.applications

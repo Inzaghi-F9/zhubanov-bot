@@ -48,8 +48,8 @@ export interface Application {
   semester?: string;
   university_name: string;
   purpose: string;
-  date_from: string;
-  date_to: string;
+  date_from?: string | null;
+  date_to?: string | null;
   status: string;
   faculty_comment: string;
   dept_comment: string;

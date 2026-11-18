@@ -12,13 +12,13 @@ import {
   Download,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { signOut } from "@/lib/auth";
+import { getProfile, signOut } from "@/lib/auth";
 import { STATUS, FACULTY_STATUSES, type DbStatus } from "@/lib/statuses";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusTimeline } from "@/components/StatusTimeline";
 import { getDocumentUrl } from "@/lib/storage";
 import toast from "react-hot-toast";
-import { FACULTIES, SEMESTERS, type Application } from "@/lib/types";
+import { FACULTIES, SEMESTERS, type Application, type Profile } from "@/lib/types";
 
 const FILTERS = [
   "все",
@@ -32,6 +32,7 @@ export default function FacultyDashboard() {
   const supabase = createClient();
 
   const [apps, setApps] = useState<Application[]>([]);
+  const [myProfile, setMyProfile] = useState<Profile | null>(null);
   const [filter, setFilter] = useState("все");
   const [semesterFilter, setSemesterFilter] = useState("все");
   const [facultyFilter, setFacultyFilter] = useState("все");
@@ -43,7 +44,15 @@ export default function FacultyDashboard() {
   const [urls, setUrls] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    loadApps();
+    (async () => {
+      const prof = await getProfile();
+      if (prof) {
+        setMyProfile(prof);
+        // Если за преподавателем закреплён факультет — сразу фильтруем по его факультету!
+        if (prof.faculty) setFacultyFilter(prof.faculty);
+      }
+      await loadApps();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -69,8 +78,9 @@ export default function FacultyDashboard() {
       return;
     }
 
+    let emailError = "";
     if (app) {
-      await fetch("/api/notify", {
+      const res = await fetch("/api/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -80,12 +90,20 @@ export default function FacultyDashboard() {
           comment,
         }),
       });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        emailError = d?.error || "Письмо не отправлено";
+      }
     }
-    toast.success(
-      status === STATUS.FACULTY_RECOMMENDED
-        ? "Рекомендовано! Письмо отправлено"
-        : "Отклонено. Письмо отправлено"
-    );
+    if (emailError) {
+      toast.success("Статус обновлён (но письмо не ушло: " + emailError + ")");
+    } else {
+      toast.success(
+        status === STATUS.FACULTY_RECOMMENDED
+          ? "Рекомендовано! Письмо отправлено"
+          : "Отклонено. Письмо отправлено"
+      );
+    }
     setCommentId(null);
     setText("");
     loadApps();
@@ -138,8 +156,6 @@ export default function FacultyDashboard() {
       "Поток (семестр)",
       "Принимающий вуз",
       "Цель",
-      "Дата начала",
-      "Дата окончания",
       "Статус",
       "Комментарий факультета",
       "Дата подачи",
@@ -156,8 +172,6 @@ export default function FacultyDashboard() {
         a.semester ?? "",
         a.university_name,
         a.purpose,
-        a.date_from,
-        a.date_to,
         a.status,
         a.faculty_comment,
         new Date(a.created_at).toLocaleDateString("ru-RU"),
@@ -185,7 +199,9 @@ export default function FacultyDashboard() {
             <GraduationCap size={22} />
             <div>
               <div className="text-sm font-bold">ARSU Факультет</div>
-              <div className="text-[11px] text-teal-200">Проверка заявок на мобильность</div>
+              <div className="text-[11px] text-teal-200">
+                {myProfile?.faculty ? myProfile.faculty : "Проверка заявок на мобильность"}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -308,9 +324,8 @@ export default function FacultyDashboard() {
                       <StatusBadge status={app.status} />
                     </div>
                     <div className="mt-1 truncate text-xs text-slate-500">
-                      🏫 {app.university_name} · 📅{" "}
-                      {new Date(app.date_from).toLocaleDateString("ru-RU")} —{" "}
-                      {new Date(app.date_to).toLocaleDateString("ru-RU")}
+                      🏫 {app.university_name} · 📅 Подана{" "}
+                      {new Date(app.created_at).toLocaleDateString("ru-RU")}
                       {app.student_faculty && <> · 🏛 {app.student_faculty}</>}
                       {app.file_paths.length > 0 && <> · 📎 {app.file_paths.length}</>}
                     </div>

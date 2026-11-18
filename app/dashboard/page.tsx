@@ -40,8 +40,6 @@ interface AppForm {
   student_gpa: string;
   purpose: string;
   university_name: string;
-  date_from: string;
-  date_to: string;
 }
 
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -73,8 +71,6 @@ export default function StudentDashboard() {
     student_gpa: "3.5",
     purpose: "",
     university_name: "",
-    date_from: "",
-    date_to: "",
   });
   const [files, setFiles] = useState<PickedFile[]>([]);
   const [sending, setSending] = useState(false);
@@ -138,8 +134,6 @@ export default function StudentDashboard() {
       student_gpa: app.student_gpa ? String(app.student_gpa) : "3.5",
       purpose: app.purpose,
       university_name: app.university_name,
-      date_from: app.date_from,
-      date_to: app.date_to,
     });
     setFiles([]);
     setActiveTab("apply");
@@ -168,14 +162,6 @@ export default function StudentDashboard() {
       toast.error("Укажите цель поездки");
       return;
     }
-    if (!appForm.date_from || !appForm.date_to) {
-      toast.error("Укажите сроки поездки");
-      return;
-    }
-    if (appForm.date_from > appForm.date_to) {
-      toast.error("Дата начала позже даты конца");
-      return;
-    }
     const gpaNum = parseFloat(appForm.student_gpa.replace(",", "."));
     if (isNaN(gpaNum) || gpaNum < 0 || gpaNum > 4.0) {
       toast.error("Укажите корректный GPA (от 0.0 до 4.0)");
@@ -200,13 +186,16 @@ export default function StudentDashboard() {
       return;
     }
 
+    // Даты по умолчанию для совместимости со старой схемой БД (пока не убрали NOT NULL)
+    const todayIso = new Date().toISOString().slice(0, 10);
+
     const basePayload = {
       student_name: student.name,
       student_email: student.email,
       university_name: appForm.university_name.trim(),
       purpose: appForm.purpose.trim(),
-      date_from: appForm.date_from,
-      date_to: appForm.date_to,
+      date_from: todayIso,
+      date_to: todayIso,
       status: STATUS.FACULTY_REVIEW,
       file_names: uploaded.names,
       file_paths: uploaded.paths,
@@ -250,6 +239,17 @@ export default function StudentDashboard() {
       return;
     }
 
+    // Отправляем email-уведомление студенту о принятии заявки на 1-й этап (На проверке факультетом)
+    fetch("/api/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        studentEmail: student.email,
+        studentName: student.name,
+        status: STATUS.FACULTY_REVIEW,
+      }),
+    }).catch(() => {});
+
     toast.success(
       editingAppId
         ? "Заявка обновлена и отправлена повторно! 🎉"
@@ -261,8 +261,6 @@ export default function StudentDashboard() {
       ...prev,
       purpose: "",
       university_name: "",
-      date_from: "",
-      date_to: "",
     }));
     setActiveTab("status");
 
@@ -590,27 +588,6 @@ export default function StudentDashboard() {
                   />
                 </label>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="text-xs text-slate-500">
-                    Начало обучения *
-                    <input
-                      type="date"
-                      value={appForm.date_from}
-                      onChange={(e) => setAppForm({ ...appForm, date_from: e.target.value })}
-                      className={`${inputClass} mt-1`}
-                    />
-                  </label>
-                  <label className="text-xs text-slate-500">
-                    Окончание обучения *
-                    <input
-                      type="date"
-                      value={appForm.date_to}
-                      onChange={(e) => setAppForm({ ...appForm, date_to: e.target.value })}
-                      className={`${inputClass} mt-1`}
-                    />
-                  </label>
-                </div>
-
                 <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 text-xs text-slate-600">
                   <div className="font-semibold text-blue-800">📎 Рекомендуемый пакет документов:</div>
                   <div className="mt-1">
@@ -667,10 +644,9 @@ export default function StudentDashboard() {
                         <StatusBadge status={app.status} />
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
-                        📅 {new Date(app.date_from).toLocaleDateString("ru-RU")} —{" "}
-                        {new Date(app.date_to).toLocaleDateString("ru-RU")} · подана{" "}
-                        {new Date(app.created_at).toLocaleDateString("ru-RU")}
+                        📅 Подана {new Date(app.created_at).toLocaleDateString("ru-RU")}
                         {app.student_faculty && <> · 🏛 {app.student_faculty}</>}
+                        {app.student_group && <> · {app.student_group}</>}
                       </div>
                       <div className="mt-3">
                         <StatusTimeline status={app.status} />
