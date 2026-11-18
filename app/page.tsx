@@ -35,6 +35,12 @@ export default function Landing() {
             </div>
             <div className="text-sm font-bold">ARSU Мобильность</div>
           </div>
+          <div className="hidden items-center gap-5 text-xs font-medium text-slate-600 md:flex">
+            <Link href="/programs" className="hover:text-blue-600 transition">Вузы-партнёры</Link>
+            <Link href="/internships" className="hover:text-blue-600 transition">Стажировки</Link>
+            <Link href="/faq" className="hover:text-blue-600 transition">FAQ</Link>
+            <Link href="/contacts" className="hover:text-blue-600 transition">Контакты</Link>
+          </div>
           <Link href="/auth"
             className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-md transition hover:bg-blue-700">
             Войти <ArrowRight size={13} />

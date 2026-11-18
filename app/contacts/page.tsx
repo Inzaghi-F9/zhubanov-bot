@@ -16,7 +16,7 @@ export default function ContactsPage() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  const handleSubmit = async (e: any) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.email.trim() || !formData.subject.trim() || !formData.message.trim()) {
       toast.error("Заполните все поля");
@@ -37,7 +37,7 @@ export default function ContactsPage() {
       } else {
         toast.error("Ошибка при отправке сообщения");
       }
-    } catch (error) {
+    } catch {
       toast.error("Ошибка при отправке");
     }
     setLoading(false);
@@ -47,14 +47,14 @@ export default function ContactsPage() {
     {
       icon: "📍",
       title: "Адрес",
-      content: "Актобе, Казахстан",
-      subtext: "Университет им. К. Жубанова"
+      content: "пр. А. Жангильдина, 34, Актобе",
+      subtext: "Университет им. К. Жубанова, главный корпус, каб. 205"
     },
     {
       icon: "📞",
       title: "Телефон",
-      content: "+7 (799) 123-45-67",
-      subtext: "Отдел международного сотрудничества"
+      content: "+7 (7132) 54-05-05",
+      subtext: "Отдел академической мобильности и международного сотрудничества"
     },
     {
       icon: "📧",
@@ -66,34 +66,34 @@ export default function ContactsPage() {
       icon: "🕐",
       title: "Часы работы",
       content: "Пн-Пт: 09:00 - 18:00",
-      subtext: "Обеденный перерыв: 12:00 - 13:00"
+      subtext: "Обеденный перерыв: 13:00 - 14:00"
     }
   ];
 
   const departments = [
     {
-      name: "Отдел международного сотрудничества",
-      phone: "+7 (799) 111-11-11",
-      email: "international@arsu.kz",
-      location: "Корпус 1, кабинет 205"
+      name: "Департамент международного сотрудничества",
+      phone: "+7 (7132) 54-05-05",
+      email: "mobility@arsu.kz",
+      location: "Главный корпус, кабинет 205"
     },
     {
-      name: "Факультет экономики и бизнеса",
-      phone: "+7 (799) 222-22-22",
-      email: "economics@arsu.kz",
-      location: "Корпус 2, кабинет 310"
+      name: "Физико-математический факультет (ИТ)",
+      phone: "+7 (7132) 56-34-25",
+      email: "fmf@arsu.kz",
+      location: "Учебный корпус по ул. Братьев Жубановых"
     },
     {
-      name: "Факультет информационных технологий",
-      phone: "+7 (799) 333-33-33",
-      email: "it@arsu.kz",
-      location: "Корпус 3, кабинет 105"
+      name: "Факультет экономики и права",
+      phone: "+7 (7132) 54-12-10",
+      email: "fep@arsu.kz",
+      location: "Учебный корпус, деканат ФЭП"
     },
     {
-      name: "Факультет инженерии и строительства",
-      phone: "+7 (799) 444-44-44",
-      email: "engineering@arsu.kz",
-      location: "Корпус 4, кабинет 201"
+      name: "Технический факультет",
+      phone: "+7 (7132) 54-38-15",
+      email: "tech@arsu.kz",
+      location: "Технический корпус, деканат"
     }
   ];
 

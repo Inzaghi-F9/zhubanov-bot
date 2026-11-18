@@ -8,7 +8,7 @@ export interface PickedFile {
   name: string;
 }
 
-const MAX_MB = 10;
+const MAX_MB = 5;
 
 /** Выбор файлов с индикацией и удалением; сами файлы грузятся в Storage при отправке */
 export function FileUpload({
@@ -28,7 +28,10 @@ export function FileUpload({
     const picked = Array.from(e.target.files ?? []);
     const ok: PickedFile[] = [];
     for (const file of picked) {
-      if (file.size > MAX_MB * 1024 * 1024) continue; // превышение размера — пропускаем
+      if (file.size > MAX_MB * 1024 * 1024) {
+        alert(`Файл «${file.name}» превышает ${MAX_MB} МБ. Пожалуйста, сожмите его.`);
+        continue;
+      }
       ok.push({ file, name: file.name });
     }
     setFiles(multiple ? [...files, ...ok] : ok.slice(0, 1));

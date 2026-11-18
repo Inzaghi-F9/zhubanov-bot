@@ -1,16 +1,17 @@
-﻿import Groq from "groq-sdk";
+import Groq from "groq-sdk";
 import { NextResponse } from "next/server";
 import { SYSTEM_PROMPT } from "@/lib/knowledge";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const MODEL = "openai/gpt-oss-120b";
-const MAX_HISTORY = 16;      // РїРѕСЃР»РµРґРЅРёС… СЃРѕРѕР±С‰РµРЅРёР№ РѕС‚РїСЂР°РІР»СЏРµРј РјРѕРґРµР»Рё
-const MAX_INPUT_LEN = 2000;  // РѕРіСЂР°РЅРёС‡РµРЅРёРµ РѕРґРЅРѕРіРѕ СЃРѕРѕР±С‰РµРЅРёСЏ
-const MAX_REQUESTS = 20;     // СЃРѕРѕР±С‰РµРЅРёР№ СЃ РѕРґРЅРѕРіРѕ IP
-const WINDOW_MS = 60_000;    // РІ РјРёРЅСѓС‚Сѓ (Р·Р°С‰РёС‚Р° РєРІРѕС‚С‹ Groq)
+const PRIMARY_MODEL = "llama-3.3-70b-versatile";
+const FALLBACK_MODEL = "llama-3.1-8b-instant";
+const MAX_HISTORY = 16;      // последних сообщений отправляем модели
+const MAX_INPUT_LEN = 2000;  // ограничение одного сообщения
+const MAX_REQUESTS = 20;     // сообщений с одного IP
+const WINDOW_MS = 60_000;    // в минуту (защита квоты Groq)
 
-// РџСЂРѕСЃС‚РѕР№ in-memory rate limit вЂ” РґР»СЏ serverless РґРѕСЃС‚Р°С‚РѕС‡РЅРѕ
+// Простой in-memory rate limit — для serverless достаточно
 const hits = new Map<string, number[]>();
 
 function rateLimited(ip: string): boolean {
@@ -30,7 +31,10 @@ interface IncomingMessage {
 export async function POST(req: Request) {
   try {
     if (!process.env.GROQ_API_KEY) {
-      return NextResponse.json({ error: "GROQ_API_KEY РЅРµ Р·Р°РґР°РЅ" }, { status: 500 });
+      return NextResponse.json(
+        { error: "GROQ_API_KEY не задан на сервере" },
+        { status: 500 }
+      );
     }
 
     const ip =
@@ -40,7 +44,7 @@ export async function POST(req: Request) {
 
     if (rateLimited(ip)) {
       return NextResponse.json(
-        { error: "РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ СЃРѕРѕР±С‰РµРЅРёР№. РџРѕРґРѕР¶РґРёС‚Рµ РјРёРЅСѓС‚Сѓ." },
+        { error: "Слишком много сообщений. Подождите минуту." },
         { status: 429 }
       );
     }
@@ -48,10 +52,10 @@ export async function POST(req: Request) {
     const { messages } = (await req.json()) as { messages?: IncomingMessage[] };
 
     if (!Array.isArray(messages) || messages.length === 0) {
-      return NextResponse.json({ error: "РџСѓСЃС‚РѕР№ Р·Р°РїСЂРѕСЃ" }, { status: 400 });
+      return NextResponse.json({ error: "Пустой запрос" }, { status: 400 });
     }
 
-    // Р’Р°Р»РёРґР°С†РёСЏ + РѕР±СЂРµР·РєР° РёСЃС‚РѕСЂРёРё
+    // Валидация + обрезка истории
     const history = messages
       .filter(
         (m): m is IncomingMessage =>
@@ -63,16 +67,26 @@ export async function POST(req: Request) {
       .map((m) => ({ ...m, content: m.content.slice(0, MAX_INPUT_LEN) }));
 
     if (history.length === 0) {
-      return NextResponse.json({ error: "РџСѓСЃС‚РѕР№ Р·Р°РїСЂРѕСЃ" }, { status: 400 });
+      return NextResponse.json({ error: "Пустой запрос" }, { status: 400 });
     }
 
-    // РЎС‚СЂРёРјРёРЅРі: Р±РѕС‚ РїРµС‡Р°С‚Р°РµС‚ РїРѕ РјРµСЂРµ РіРµРЅРµСЂР°С†РёРё
-    const stream = await groq.chat.completions.create({
-      model: MODEL,
-      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history],
-      temperature: 0.4,
-      stream: true,
-    });
+    // Стриминг: бот печатает по мере генерации (с резервной моделью на случай лимитов)
+    let stream;
+    try {
+      stream = await groq.chat.completions.create({
+        model: PRIMARY_MODEL,
+        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history],
+        temperature: 0.4,
+        stream: true,
+      });
+    } catch {
+      stream = await groq.chat.completions.create({
+        model: FALLBACK_MODEL,
+        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history],
+        temperature: 0.4,
+        stream: true,
+      });
+    }
 
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
@@ -83,7 +97,9 @@ export async function POST(req: Request) {
             if (text) controller.enqueue(encoder.encode(text));
           }
         } catch {
-          controller.enqueue(encoder.encode("\n\nвљ пёЏ РЎРІСЏР·СЊ СЃ РР РїСЂРµСЂРІР°Р»Р°СЃСЊ. РџРѕРїСЂРѕР±СѓР№С‚Рµ РµС‰С‘ СЂР°Р·."));
+          controller.enqueue(
+            encoder.encode("\n\n⚠️ Связь с ИИ прервалась. Попробуйте ещё раз.")
+          );
         } finally {
           controller.close();
         }
@@ -99,7 +115,7 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("Chat error:", error);
     return NextResponse.json(
-      { error: "РћС€РёР±РєР° СЃРІСЏР·Рё СЃ РР. РџРѕРїСЂРѕР±СѓР№С‚Рµ РїРѕР·Р¶Рµ." },
+      { error: "Ошибка связи с ИИ. Попробуйте позже." },
       { status: 500 }
     );
   }

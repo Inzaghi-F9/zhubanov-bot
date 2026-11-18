@@ -2,8 +2,9 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { GraduationCap, Mail, Lock, User as UserIcon, ArrowRight } from "lucide-react";
+import { GraduationCap, Mail, Lock, User as UserIcon, ArrowRight, Building2, Phone } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { FACULTIES } from "@/lib/types";
 import toast from "react-hot-toast";
 
 type Mode = "login" | "register" | "reset";
@@ -29,11 +30,18 @@ function AuthForm() {
   const supabase = createClient();
 
   const [mode, setMode] = useState<Mode>("login");
-  const [formData, setFormData] = useState({ email: "", password: "", name: "", group: "IT-202" });
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+    name: "",
+    group: "IT-202",
+    faculty: FACULTIES[0] as string,
+    phone: "",
+  });
   const [loading, setLoading] = useState(false);
   const [resetSent, setResetSent] = useState(false);
 
-  const set = (key: keyof typeof formData) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (key: keyof typeof formData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setFormData({ ...formData, [key]: e.target.value });
 
   const handleAuth = async () => {
@@ -75,7 +83,12 @@ function AuthForm() {
           email,
           password,
           options: {
-            data: { name, group_name: formData.group }, // попадёт в профиль триггером
+            data: {
+              name,
+              group_name: formData.group,
+              faculty: formData.faculty,
+              phone: formData.phone,
+            }, // попадёт в профиль триггером
           },
         });
         if (error) {
@@ -145,9 +158,33 @@ function AuthForm() {
                 <>
                   <div className="relative">
                     <UserIcon size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input placeholder="ФИО студента" value={formData.name} onChange={set("name")} className={inputClass} />
+                    <input placeholder="ФИО студента *" value={formData.name} onChange={set("name")} className={inputClass} />
                   </div>
-                  <input placeholder="Группа (например IT-202)" value={formData.group} onChange={set("group")} className={inputClass} />
+                  <div className="relative">
+                    <Building2 size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <select value={formData.faculty} onChange={set("faculty")} className={inputClass}>
+                      {FACULTIES.map((f) => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      placeholder="Группа (IT-202)"
+                      value={formData.group}
+                      onChange={set("group")}
+                      className="card w-full rounded-xl px-4 py-3 text-sm outline-none focus:border-blue-500 transition placeholder:text-slate-400"
+                    />
+                    <div className="relative">
+                      <Phone size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        placeholder="+7 700..."
+                        value={formData.phone}
+                        onChange={set("phone")}
+                        className="card w-full rounded-xl pl-9 pr-3 py-3 text-sm outline-none focus:border-blue-500 transition placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
                 </>
               )}
 

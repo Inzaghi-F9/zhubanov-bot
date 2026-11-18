@@ -29,10 +29,20 @@ create table if not exists public.profiles (
   role        text not null default 'student' check (role in ('student', 'faculty', 'admin')),
   name        text not null default '',
   group_name  text,
+  faculty     text,
+  phone       text,
+  gpa         numeric(3,2),
+  course      int2,
   avatar_url  text,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+
+-- Дограция колонок profiles (если таблица уже была создана ранее)
+alter table public.profiles add column if not exists faculty text;
+alter table public.profiles add column if not exists phone   text;
+alter table public.profiles add column if not exists gpa     numeric(3,2);
+alter table public.profiles add column if not exists course  int2;
 
 -- 4. ЗАЯВКИ (файлы — пути в Storage, а не base64 в колонках)
 create table if not exists public.applications (
@@ -40,6 +50,11 @@ create table if not exists public.applications (
   student_id      uuid not null references public.profiles(id) on delete cascade,
   student_name    text not null,
   student_email   text not null,
+  student_group   text,
+  student_faculty text,
+  student_phone   text,
+  student_gpa     numeric(3,2),
+  semester        text not null default 'Осень 2026 (1 семестр)',
   university_name text not null,
   purpose         text not null,
   date_from       date not null,
@@ -53,9 +68,18 @@ create table if not exists public.applications (
   updated_at      timestamptz not null default now()
 );
 
-create index if not exists applications_student_idx on public.applications (student_id);
-create index if not exists applications_status_idx  on public.applications (status);
-create index if not exists applications_created_idx on public.applications (created_at desc);
+-- Дограция колонок applications (если таблица уже была создана ранее)
+alter table public.applications add column if not exists student_group   text;
+alter table public.applications add column if not exists student_faculty text;
+alter table public.applications add column if not exists student_phone   text;
+alter table public.applications add column if not exists student_gpa     numeric(3,2);
+alter table public.applications add column if not exists semester        text not null default 'Осень 2026 (1 семестр)';
+
+create index if not exists applications_student_idx  on public.applications (student_id);
+create index if not exists applications_status_idx   on public.applications (status);
+create index if not exists applications_semester_idx on public.applications (semester);
+create index if not exists applications_faculty_idx  on public.applications (student_faculty);
+create index if not exists applications_created_idx  on public.applications (created_at desc);
 
 -- 5. ХЕЛПЕРЫ РОЛЕЙ (security definer — обходят RLS для чтения своей роли)
 create or replace function public.my_role() returns text
@@ -91,6 +115,15 @@ create policy "applications_select_own" on public.applications
 drop policy if exists "applications_insert_own" on public.applications;
 create policy "applications_insert_own" on public.applications
   for insert with check (student_id = auth.uid());
+
+drop policy if exists "applications_update_own_rejected" on public.applications;
+create policy "applications_update_own_rejected" on public.applications
+  for update using (
+    student_id = auth.uid() and status in ('Отклонён факультетом', 'Ошибка')
+  )
+  with check (
+    student_id = auth.uid() and status = 'На проверке (факультет)'
+  );
 
 drop policy if exists "applications_select_staff" on public.applications;
 create policy "applications_select_staff" on public.applications
@@ -134,12 +167,14 @@ create trigger applications_touch before update on public.applications
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  insert into public.profiles (id, email, name, group_name)
+  insert into public.profiles (id, email, name, group_name, faculty, phone)
   values (
     new.id,
     new.email,
     coalesce(new.raw_user_meta_data ->> 'name', ''),
-    nullif(new.raw_user_meta_data ->> 'group_name', '')
+    nullif(new.raw_user_meta_data ->> 'group_name', ''),
+    nullif(new.raw_user_meta_data ->> 'faculty', ''),
+    nullif(new.raw_user_meta_data ->> 'phone', '')
   )
   on conflict (id) do nothing;
   return new;
