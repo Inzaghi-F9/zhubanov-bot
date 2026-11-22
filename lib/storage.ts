@@ -48,6 +48,29 @@ export async function uploadDocuments(
   return { names, paths };
 }
 
+/** Загрузка одного документа пакета: documents/<uid>/<appId>/<docType>_<time>.<ext> */
+export async function uploadDocument(
+  userId: string,
+  appId: string,
+  file: File,
+  docType: string
+): Promise<{ path: string } | { error: string }> {
+  if (file.size > MAX_FILE_MB * 1024 * 1024) {
+    return { error: `Файл «${file.name}» больше ${MAX_FILE_MB} МБ` };
+  }
+  const supabase = createClient();
+  const dotIdx = file.name.lastIndexOf(".");
+  const ext = (dotIdx > 0 ? file.name.slice(dotIdx).toLowerCase() : "").replace(/[^.a-z0-9]/g, "") || ".bin";
+  const safeType = docType.replace(/[^a-z0-9_]/gi, "_");
+  const path = `${userId}/${appId}/${safeType}_${Date.now()}${ext}`;
+  const { error } = await supabase.storage.from("documents").upload(path, file, {
+    upsert: true,
+    contentType: file.type || "application/octet-stream",
+  });
+  if (error) return { error: `Ошибка загрузки «${file.name}»: ${error.message}` };
+  return { path };
+}
+
 /** Подписанная ссылка на скачивание документа (RLS проверит права) */
 export async function getDocumentUrl(path: string): Promise<string | null> {
   const supabase = createClient();

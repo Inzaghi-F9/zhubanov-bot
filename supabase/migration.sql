@@ -231,3 +231,132 @@ create policy "avatars_write_own" on storage.objects
 --   update public.profiles set role = 'admin'   where email = 'admin@arsu.kz';
 --   update public.profiles set role = 'faculty' where email = 'faculty@arsu.kz';
 -- ============================================================
+
+
+
+-- ============================================================
+-- ЧАСТЬ 3 (v3): расширенная анкета, пакет документов, тест/интервью/решение,
+-- доступ координаторов только к своему факультету, уведомления
+-- ============================================================
+
+alter table public.applications add column if not exists specialty        text;
+alter table public.applications add column if not exists study_form       text;
+alter table public.applications add column if not exists funding_source   text;
+alter table public.applications add column if not exists education_level  text;
+alter table public.applications add column if not exists birth_date       date;
+alter table public.applications add column if not exists course           int2;
+alter table public.applications add column if not exists universities     jsonb  not null default '[]';
+alter table public.applications add column if not exists country          text;
+alter table public.applications add column if not exists social_status    text[] not null default '{}';
+alter table public.applications add column if not exists participation    text;
+alter table public.applications add column if not exists documents        jsonb  not null default '[]';
+alter table public.applications add column if not exists doc_feedback     jsonb  not null default '{}';
+alter table public.applications add column if not exists faculty_deadline date;
+alter table public.applications add column if not exists test_info        jsonb;
+alter table public.applications add column if not exists test_result      text;
+alter table public.applications add column if not exists interview_info   jsonb;
+alter table public.applications add column if not exists interview_result text;
+alter table public.applications add column if not exists decision_info    jsonb;
+alter table public.applications alter column purpose set default '';
+
+-- Факультет текущего пользователя
+create or replace function public.my_faculty() returns text
+language sql stable security definer set search_path = public as $$
+  select faculty from public.profiles where id = auth.uid();
+$$;
+
+-- Доступ сотрудника к заявке: админ — все; координатор — только свой факультет
+-- (если координатору факультет не назначен — видит все)
+create or replace function public.can_access_application(fac text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select case
+    when public.my_role() = 'admin' then true
+    when public.my_role() = 'faculty' then (public.my_faculty() is null or public.my_faculty() = fac)
+    else false
+  end;
+$$;
+
+drop policy if exists "applications_select_staff" on public.applications;
+create policy "applications_select_staff" on public.applications
+  for select using (public.can_access_application(student_faculty));
+
+drop policy if exists "applications_update_staff" on public.applications;
+create policy "applications_update_staff" on public.applications
+  for update using (public.can_access_application(student_faculty))
+  with check (public.can_access_application(student_faculty));
+
+-- Студент может обновлять только свою заявку; что именно — контролирует триггер ниже
+drop policy if exists "applications_update_own_rejected" on public.applications;
+create policy "applications_update_own_rejected" on public.applications
+  for update using (student_id = auth.uid()) with check (student_id = auth.uid());
+
+-- Защита: студент не может сам менять статус, комментарии, результаты тестов и решения
+create or replace function public.guard_application_write() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.is_staff() then
+    return new;
+  end if;
+
+  if tg_op = 'INSERT' then
+    new.status := 'На проверке (факультет)';
+    new.faculty_comment := '';
+    new.dept_comment := '';
+    new.doc_feedback := '{}'::jsonb;
+    new.faculty_deadline := null;
+    new.test_info := null;
+    new.test_result := null;
+    new.interview_info := null;
+    new.interview_result := null;
+    new.decision_info := null;
+    return new;
+  end if;
+
+  -- UPDATE студентом: только повторная подача после возврата на исправление
+  if old.status not in ('На исправление (факультет)', 'Не рекомендован факультетом', 'Отклонён факультетом',
+                        'На исправление (департамент)', 'Ошибка') then
+    raise exception 'Заявку можно изменить только после возврата на исправление';
+  end if;
+
+  if old.status in ('На исправление (департамент)', 'Ошибка') then
+    new.status := 'На рассмотрении (департамент)';
+  else
+    new.status := 'На проверке (факультет)';
+  end if;
+
+  new.student_id       := old.student_id;
+  new.faculty_comment  := old.faculty_comment;
+  new.dept_comment     := old.dept_comment;
+  new.doc_feedback     := old.doc_feedback;
+  new.faculty_deadline := old.faculty_deadline;
+  new.test_info        := old.test_info;
+  new.test_result      := old.test_result;
+  new.interview_info   := old.interview_info;
+  new.interview_result := old.interview_result;
+  new.decision_info    := old.decision_info;
+  return new;
+end $$;
+
+drop trigger if exists applications_guard on public.applications;
+create trigger applications_guard before insert or update on public.applications
+  for each row execute function public.guard_application_write();
+
+-- Email-адреса координаторов факультета и администраторов (для уведомлений)
+create or replace function public.coordinator_emails(fac text) returns table(email text)
+language sql stable security definer set search_path = public as $$
+  select p.email from public.profiles p
+  where auth.uid() is not null and p.role = 'faculty' and (p.faculty = fac or p.faculty is null);
+$$;
+
+create or replace function public.admin_emails() returns table(email text)
+language sql stable security definer set search_path = public as $$
+  select p.email from public.profiles p
+  where auth.uid() is not null and p.role = 'admin';
+$$;
+
+revoke execute on function public.coordinator_emails(text) from anon;
+revoke execute on function public.admin_emails() from anon;
+grant execute on function public.coordinator_emails(text) to authenticated;
+grant execute on function public.admin_emails() to authenticated;
+
+create index if not exists applications_course_idx on public.applications (course);

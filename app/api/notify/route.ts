@@ -1,179 +1,270 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
-import nodemailer from "nodemailer";
 import { createClient } from "@/lib/supabase/server";
-import { STATUS, type DbStatus } from "@/lib/statuses";
+import { STATUS } from "@/lib/statuses";
+import { sendMail } from "@/lib/mailer";
+import { getUniversities, docLabel, formatDate } from "@/lib/application";
+import type { Application, EventInfo } from "@/lib/types";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
-const TEMPLATES: Record<DbStatus, { subject: string; title: string; color: string; hint: string }> = {
+const TEMPLATES: Record<string, { subject: string; color: string; hint: string }> = {
   [STATUS.FACULTY_REVIEW]: {
-    subject: "📩 Заявка принята на проверку — ARSU",
-    title: "Заявка принята на проверку",
+    subject: "📩 Заявка принята на проверку факультетом — ARSU",
     color: "#2563eb",
-    hint: "Ваша заявка передана на ваш факультет. Ожидайте рекомендации деканата.",
+    hint: "Ваша заявка передана координатору факультета. Ожидайте результата проверки.",
+  },
+  [STATUS.FACULTY_FIX]: {
+    subject: "✏️ Пакет документов нужно исправить — ARSU",
+    color: "#f59e0b",
+    hint: "Координатор факультета вернул документы на исправление. Исправьте замечания в личном кабинете и отправьте заявку повторно.",
   },
   [STATUS.FACULTY_RECOMMENDED]: {
     subject: "✅ Факультет рекомендовал вашу заявку — ARSU",
-    title: "Факультет рекомендовал вашу заявку",
     color: "#22c55e",
-    hint: "Заявка направлена в департамент академической мобильности.",
+    hint: "Заявка передана в департамент академической мобильности.",
   },
   [STATUS.FACULTY_REJECTED]: {
-    subject: "❌ Заявка отклонена факультетом — ARSU",
-    title: "Заявка отклонена факультетом",
+    subject: "❌ Заявка не рекомендована факультетом — ARSU",
     color: "#ef4444",
-    hint: "Исправьте указанную причину в личном кабинете и подайте заявку повторно.",
+    hint: "Ознакомьтесь с причиной, исправьте и подайте заявку заново через личный кабинет.",
   },
   [STATUS.DEPARTMENT_REVIEW]: {
     subject: "🏛 Заявка на рассмотрении департамента — ARSU",
-    title: "Заявка на рассмотрении департамента",
     color: "#7c3aed",
-    hint: "Департамент рассматривает вашу заявку. Ожидайте приглашения на тестирование.",
+    hint: "Департамент академической мобильности рассматривает вашу заявку.",
+  },
+  [STATUS.DEPARTMENT_FIX]: {
+    subject: "✏️ Департамент просит исправить документы — ARSU",
+    color: "#f59e0b",
+    hint: "Исправьте указанные ошибки в личном кабинете и отправьте заявку повторно.",
+  },
+  [STATUS.DEPARTMENT_APPROVED]: {
+    subject: "✅ Заявка одобрена департаментом — ARSU",
+    color: "#16a34a",
+    hint: "Ожидайте приглашения на тестирование.",
+  },
+  [STATUS.DEPARTMENT_REJECTED]: {
+    subject: "❌ Заявка отклонена департаментом — ARSU",
+    color: "#dc2626",
+    hint: "К сожалению, заявка отклонена. Причина указана ниже.",
   },
   [STATUS.TEST]: {
-    subject: "📝 Вас пригласили на тестирование — ARSU",
-    title: "Приглашение на тестирование",
+    subject: "📝 Приглашение на тестирование — ARSU",
     color: "#f59e0b",
-    hint: "Вас пригласили на тестирование. Дату и место сообщат дополнительно.",
+    hint: "Вы приглашены на тестирование. Детали ниже — не опаздывайте и возьмите удостоверение личности.",
+  },
+  [STATUS.TEST_PASSED]: {
+    subject: "🎉 Вы прошли тестирование — ARSU",
+    color: "#16a34a",
+    hint: "Поздравляем! Ожидайте приглашения на интервью.",
+  },
+  [STATUS.TEST_FAILED]: {
+    subject: "Результат тестирования — ARSU",
+    color: "#dc2626",
+    hint: "К сожалению, тестирование не пройдено.",
   },
   [STATUS.INTERVIEW]: {
-    subject: "🎤 Вас пригласили на интервью — ARSU",
-    title: "Приглашение на интервью",
+    subject: "🎤 Приглашение на интервью — ARSU",
     color: "#0d9488",
-    hint: "Вас пригласили на конкурсное интервью. Подготовьтесь и возьмите оригиналы документов.",
+    hint: "Вы приглашены на интервью. Детали ниже. Возьмите оригиналы документов.",
+  },
+  [STATUS.INTERVIEW_PASSED]: {
+    subject: "🎉 Вы прошли интервью — ARSU",
+    color: "#16a34a",
+    hint: "Поздравляем! Ожидайте итогового решения департамента.",
+  },
+  [STATUS.INTERVIEW_FAILED]: {
+    subject: "Результат интервью — ARSU",
+    color: "#dc2626",
+    hint: "К сожалению, интервью не пройдено.",
   },
   [STATUS.ACCEPTED]: {
-    subject: "🎉 Ваша заявка принята — ARSU",
-    title: "Поздравляем! Заявка принята",
+    subject: "🎉 Решение: вы приняты в программу мобильности — ARSU",
     color: "#16a34a",
-    hint: "Ваши документы приняты. Ожидайте дальнейших инструкций по академической мобильности.",
+    hint: "Поздравляем! Ожидайте дальнейших инструкций по оформлению документов.",
   },
-  [STATUS.REJECTED]: {
-    subject: "❌ В заявке обнаружена ошибка — ARSU",
-    title: "В заявке обнаружена ошибка",
+  [STATUS.NOT_ACCEPTED]: {
+    subject: "Итоговое решение по заявке — ARSU",
     color: "#dc2626",
-    hint: "Исправьте указанную причину в личном кабинете и подайте документы повторно.",
+    hint: "К сожалению, по итогам конкурса заявка не принята.",
   },
 };
 
+function esc(v: unknown): string {
+  return String(v ?? "").replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string
+  );
+}
+
+function box(color: string, inner: string) {
+  return `<div style="padding:16px;border-radius:10px;margin:16px 0;background:#f8fafc;border-left:5px solid ${color};color:#334155;font-size:14px;line-height:1.7">${inner}</div>`;
+}
+
+function eventHtml(title: string, info?: EventInfo | null) {
+  if (!info) return "";
+  return box(
+    "#2563eb",
+    `<strong>${title}</strong><br>📅 Дата: ${esc(formatDate(info.date))}<br>🕐 Время: ${esc(info.time)}<br>📍 Место: ${esc(
+      info.place
+    )}<br>🗣 Язык: ${esc(info.language)}<br>💻 Формат: ${esc(info.format)}${
+      info.note ? `<br>📝 ${esc(info.note)}` : ""
+    }`
+  );
+}
+
+function detailsHtml(app: Application): string {
+  const s = app.status;
+  const parts: string[] = [];
+  const facultyStatuses: string[] = [STATUS.FACULTY_FIX, STATUS.FACULTY_RECOMMENDED, STATUS.FACULTY_REJECTED];
+  const comment = facultyStatuses.includes(s) ? app.faculty_comment : app.dept_comment;
+
+  if (s === STATUS.FACULTY_FIX || s === STATUS.DEPARTMENT_FIX) {
+    const fb = Object.entries(app.doc_feedback ?? {});
+    if (fb.length) {
+      parts.push(
+        box(
+          "#f59e0b",
+          `<strong>Что нужно исправить:</strong><ul style="margin:8px 0 0;padding-left:18px">${fb
+            .map(([t, c]) => `<li><b>${esc(docLabel(t, app))}</b>: ${esc(c)}</li>`)
+            .join("")}</ul>`
+        )
+      );
+    }
+  }
+  if (s === STATUS.FACULTY_RECOMMENDED && app.faculty_deadline) {
+    parts.push(box("#22c55e", `⏰ Дедлайн: <b>${esc(formatDate(app.faculty_deadline))}</b>`));
+  }
+  if (s === STATUS.TEST) parts.push(eventHtml("Детали тестирования", app.test_info));
+  if (s === STATUS.INTERVIEW) parts.push(eventHtml("Детали интервью", app.interview_info));
+  if ((s === STATUS.ACCEPTED || s === STATUS.NOT_ACCEPTED) && app.decision_info) {
+    const d = app.decision_info;
+    parts.push(
+      box(
+        s === STATUS.ACCEPTED ? "#16a34a" : "#dc2626",
+        `<strong>Решение: ${esc(d.decision)}</strong>${
+          d.university ? `<br>🏫 Вуз: ${esc(d.university)}` : ""
+        }${d.country ? `<br>🌍 Страна: ${esc(d.country)}` : ""}`
+      )
+    );
+  }
+  if (comment) parts.push(`<p style="color:#475569">💬 Комментарий: ${esc(comment)}</p>`);
+  return parts.join("");
+}
+
+function layout(title: string, body: string) {
+  return `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
+      <div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);padding:24px;border-radius:12px 12px 0 0;text-align:center">
+        <h1 style="color:white;margin:0;font-size:20px">🎓 Университет им. К. Жубанова — Академическая мобильность</h1>
+      </div>
+      <div style="background:white;padding:28px;border:1px solid #e5e7eb;border-radius:0 0 12px 12px">
+        <h2 style="color:#1e293b;margin-top:0">${title}</h2>
+        ${body}
+      </div>
+    </div>`;
+}
+
+function button(href: string, label: string) {
+  return `<a href="${href}" style="display:inline-block;margin-top:16px;padding:12px 24px;background:#2563eb;color:white;text-decoration:none;border-radius:8px;font-weight:bold">${label}</a>`;
+}
+
 export async function POST(req: Request) {
   try {
-    // 1. Проверяем авторизацию
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Требуется вход" }, { status: 401 });
 
-    if (!user) {
-      return NextResponse.json({ error: "Требуется вход" }, { status: 401 });
-    }
+    const { applicationId } = (await req.json()) as { applicationId?: string };
+    if (!applicationId) return NextResponse.json({ error: "Не указана заявка" }, { status: 400 });
 
-    const { studentEmail, studentName, status, comment } = (await req.json()) as {
-      studentEmail?: string;
-      studentName?: string;
-      status?: DbStatus;
-      comment?: string;
-    };
+    // RLS гарантирует: студент видит только свою заявку, факультет — только своих студентов
+    const { data: app } = await supabase
+      .from("applications")
+      .select("*")
+      .eq("id", applicationId)
+      .single<Application>();
+    if (!app) return NextResponse.json({ error: "Заявка не найдена" }, { status: 404 });
 
-    if (!studentEmail || !studentName || !status) {
-      return NextResponse.json({ error: "Не хватает данных" }, { status: 400 });
-    }
-
-    // Студент может вызвать /api/notify только при подаче своей заявки (статус FACULTY_REVIEW на свой email)
-    // Все остальные статусы могут отправлять только преподаватели (faculty) и администраторы (admin)
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
+    const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
     const isStaff = profile?.role === "faculty" || profile?.role === "admin";
-    const isSelfSubmission =
-      status === STATUS.FACULTY_REVIEW &&
-      user.email?.toLowerCase() === studentEmail.toLowerCase();
+    const studentAllowed: string[] = [STATUS.FACULTY_REVIEW, STATUS.DEPARTMENT_REVIEW];
 
-    if (!isStaff && !isSelfSubmission) {
+    if (!isStaff && !(app.student_id === user.id && studentAllowed.includes(app.status))) {
       return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
     }
 
-    const tpl = TEMPLATES[status];
-    if (!tpl) {
-      return NextResponse.json({ error: `Неизвестный статус: ${status}` }, { status: 400 });
+    const tpl = TEMPLATES[app.status] ?? {
+      subject: "Статус заявки обновлён — ARSU",
+      color: "#2563eb",
+      hint: "",
+    };
+
+    // 1. Письмо студенту
+    await sendMail(
+      app.student_email,
+      tpl.subject,
+      layout(
+        `Здравствуйте, ${esc(app.student_name)}!`,
+        `<p style="color:#64748b">Статус вашей заявки на академическую мобильность (${esc(app.semester ?? "")}):</p>
+         ${box(tpl.color, `<strong style="font-size:17px;color:${tpl.color}">${esc(app.status)}</strong>`)}
+         ${detailsHtml(app)}
+         <p style="color:#64748b">${tpl.hint}</p>
+         ${button(`${SITE_URL}/dashboard`, "Перейти в личный кабинет")}`
+      )
+    );
+
+    // 2. Уведомление координаторам / департаменту
+    let staffEmails: string[] = [];
+    let staffTitle = "";
+    let staffLink = `${SITE_URL}/faculty`;
+
+    if (app.status === STATUS.FACULTY_REVIEW && app.student_faculty) {
+      const { data } = await supabase.rpc("coordinator_emails", { fac: app.student_faculty });
+      staffEmails = ((data ?? []) as { email: string }[]).map((r) => r.email);
+      staffTitle = "Новая заявка на проверку факультетом";
+    } else if (
+      app.status === STATUS.FACULTY_RECOMMENDED ||
+      (app.status === STATUS.DEPARTMENT_REVIEW && !isStaff)
+    ) {
+      const { data } = await supabase.rpc("admin_emails");
+      staffEmails = ((data ?? []) as { email: string }[]).map((r) => r.email);
+      staffTitle =
+        app.status === STATUS.FACULTY_RECOMMENDED
+          ? "Факультет рекомендовал студента"
+          : "Студент исправил документы для департамента";
+      staffLink = `${SITE_URL}/admin`;
     }
 
-    const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background: linear-gradient(135deg, #1e3a5f, #2563eb); padding: 30px; border-radius: 12px 12px 0 0; text-align: center;">
-          <h1 style="color: white; margin: 0; font-size: 24px;">🎓 Университет им. К. Жубанова</h1>
-        </div>
-        <div style="background: white; padding: 30px; border: 1px solid #e5e7eb; border-radius: 0 0 12px 12px;">
-          <h2 style="color: #1e293b;">Здравствуйте, ${studentName}!</h2>
-          <p style="color: #64748b; font-size: 16px;">Статус вашей заявки на академическую мобильность обновлён:</p>
-          <div style="padding: 20px; border-radius: 10px; margin: 20px 0; background: #f8fafc; border-left: 5px solid ${tpl.color};">
-            <strong style="font-size: 18px; color: ${tpl.color};">${status}</strong>
-            ${comment ? `<p style="color: #64748b; margin-top: 10px;">Комментарий: ${comment}</p>` : ""}
-          </div>
-          <p style="color: #64748b;">${tpl.hint}</p>
-          <a href="${SITE_URL}/dashboard"
-            style="display: inline-block; margin-top: 20px; padding: 12px 24px; background: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">
-            Перейти в личный кабинет
-          </a>
-        </div>
-      </div>
-    `;
-
-    // Вариант А: Если настроен Gmail / корпоративный SMTP (работает для ЛЮБЫХ адресов студентов без покупки домена!)
-    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST ?? "smtp.gmail.com",
-        port: Number(process.env.SMTP_PORT ?? 465),
-        secure: Number(process.env.SMTP_PORT ?? 465) === 465,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-
-      await transporter.sendMail({
-        from: `"ARSU Мобильность" <${process.env.SMTP_USER}>`,
-        to: studentEmail,
-        subject: tpl.subject,
-        html,
-      });
-
-      return NextResponse.json({ success: true, provider: "smtp" });
+    let staffError: string | null = null;
+    if (staffEmails.length) {
+      const unis = getUniversities(app)
+        .map((u) => `${esc(u.name)}${u.country ? ` (${esc(u.country)})` : ""}`)
+        .join(", ");
+      try {
+        await sendMail(
+          staffEmails,
+          `🔔 ${staffTitle}: ${app.student_name} — ARSU`,
+          layout(
+            staffTitle,
+            box(
+              "#2563eb",
+              `<b>${esc(app.student_name)}</b><br>🏛 ${esc(app.student_faculty ?? "")}, ${esc(
+                app.course ? `${app.course} курс` : ""
+              )} ${esc(app.student_group ?? "")}<br>📚 ${esc(app.specialty ?? "")}<br>🏫 ${unis}<br>📅 ${esc(
+                app.semester ?? ""
+              )}`
+            ) + button(staffLink, "Открыть кабинет")
+          )
+        );
+      } catch (e) {
+        staffError = e instanceof Error ? e.message : "staff mail error";
+      }
     }
 
-    // Вариант Б: Resend API (требует привязанный домен в Resend для отправки на чужие адреса)
-    if (!process.env.RESEND_API_KEY) {
-      return NextResponse.json(
-        { error: "Не задан SMTP_USER/SMTP_PASS или RESEND_API_KEY в настройках сервера" },
-        { status: 500 }
-      );
-    }
-
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    const { data, error } = await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
-      to: studentEmail,
-      subject: tpl.subject,
-      html,
-    });
-
-    if (error) {
-      console.error("Resend error:", error);
-      return NextResponse.json(
-        {
-          error:
-            error.message ||
-            "Resend отклонил отправку (на бесплатном тарифе без своего домена письма уходят только владельцу аккаунта Resend. Подключите SMTP_USER и SMTP_PASS от Gmail!)",
-        },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json({ success: true, provider: "resend", id: data?.id });
+    return NextResponse.json({ success: true, staffNotified: staffEmails.length, staffError });
   } catch (error) {
     console.error("Notify error:", error);
     return NextResponse.json(

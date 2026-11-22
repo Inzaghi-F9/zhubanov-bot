@@ -5,41 +5,72 @@ import { useRouter } from "next/navigation";
 import {
   GraduationCap,
   LogOut,
-  FileText,
   Camera,
   MapPin,
   Milestone,
   Bot,
   RotateCcw,
-  ExternalLink,
+  Plus,
+  Trash2,
+  Paperclip,
+  X,
+  FileText,
+  AlertTriangle,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getProfile, signOut } from "@/lib/auth";
-import { uploadDocuments, uploadAvatar, getDocumentUrl } from "@/lib/storage";
-import { STATUS } from "@/lib/statuses";
+import { uploadDocument, uploadAvatar } from "@/lib/storage";
+import { STATUS, RESUBMITTABLE } from "@/lib/statuses";
+import { notifyApplication } from "@/lib/workflow";
+import { getDocuments, getUniversities, formatDate } from "@/lib/application";
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusTimeline } from "@/components/StatusTimeline";
-import { FileUpload, type PickedFile } from "@/components/FileUpload";
+import { ApplicationDetails } from "@/components/ApplicationDetails";
 import { ChatBox } from "@/components/ChatBox";
 import toast from "react-hot-toast";
 import {
   FACULTIES,
   SEMESTERS,
   CURRENT_SEMESTER,
+  EDUCATION_LEVELS,
+  STUDY_FORMS,
+  PARTICIPATION,
+  COURSES,
+  SOCIAL_STATUSES,
+  DOCUMENT_TYPES,
+  SOCIAL_DOCUMENT,
+  MAX_UNIVERSITIES,
+  fundingOptions,
   type Profile,
   type Application,
+  type UniversityChoice,
+  type AppDocument,
 } from "@/lib/types";
 
 type Tab = "home" | "apply" | "status" | "chat" | "profile";
 
+interface DocDraft {
+  file: File | null;
+  existingName: string | null;
+  existingPath: string | null;
+  comment: string;
+}
+
 interface AppForm {
   semester: string;
   student_faculty: string;
+  course: string;
   student_group: string;
   student_phone: string;
   student_gpa: string;
-  purpose: string;
-  university_name: string;
+  birth_date: string;
+  education_level: string;
+  study_form: string;
+  participation: string;
+  funding_source: string;
+  specialty: string;
+  universities: UniversityChoice[];
+  social_status: string[];
 }
 
 const TABS: { id: Tab; icon: string; label: string }[] = [
@@ -59,20 +90,29 @@ export default function StudentDashboard() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("home");
 
-  // Если редактируем/переподаём отклонённую заявку
-  const [editingAppId, setEditingAppId] = useState<string | null>(null);
+  // Если редактируем/переподаём заявку
+  const [editingApp, setEditingApp] = useState<Application | null>(null);
 
   // Форма заявки
   const [appForm, setAppForm] = useState<AppForm>({
     semester: CURRENT_SEMESTER,
     student_faculty: FACULTIES[0],
+    course: "2",
     student_group: "",
     student_phone: "",
     student_gpa: "3.5",
-    purpose: "",
-    university_name: "",
+    birth_date: "",
+    education_level: EDUCATION_LEVELS[0],
+    study_form: STUDY_FORMS[0],
+    participation: PARTICIPATION[0],
+    funding_source: "За счёт университета",
+    specialty: "",
+    universities: [{ name: "", country: "" }],
+    social_status: [],
   });
-  const [files, setFiles] = useState<PickedFile[]>([]);
+
+  // Черновики по каждому документу из пакета
+  const [docsDraft, setDocsDraft] = useState<Record<string, DocDraft>>({});
   const [sending, setSending] = useState(false);
 
   // Профиль
@@ -87,6 +127,29 @@ export default function StudentDashboard() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  // Автоматическая подстройка источника финансирования при смене семестра / гранта / участия
+  useEffect(() => {
+    const opts = fundingOptions({
+      semester: appForm.semester,
+      study_form: appForm.study_form,
+      education_level: appForm.education_level,
+      participation: appForm.participation,
+    });
+    const currentAllowed = opts.find((o) => o.value === appForm.funding_source)?.allowed;
+    if (!currentAllowed) {
+      const firstAllowed = opts.find((o) => o.allowed);
+      if (firstAllowed && firstAllowed.value !== appForm.funding_source) {
+        setAppForm((prev) => ({ ...prev, funding_source: firstAllowed.value }));
+      }
+    }
+  }, [
+    appForm.semester,
+    appForm.study_form,
+    appForm.education_level,
+    appForm.participation,
+    appForm.funding_source,
+  ]);
 
   useEffect(() => {
     (async () => {
@@ -107,6 +170,7 @@ export default function StudentDashboard() {
       setAppForm((prev) => ({
         ...prev,
         student_faculty: profile.faculty || FACULTIES[0],
+        course: profile.course ? String(profile.course) : "2",
         student_group: profile.group_name ?? "",
         student_phone: profile.phone ?? "",
         student_gpa: profile.gpa ? String(profile.gpa) : "3.5",
@@ -123,43 +187,122 @@ export default function StudentDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Заполнение формы данными отклонённой заявки для повторной подачи
+  // Заполнение формы данными заявки, возвращённой на исправление
   const startResubmit = (app: Application) => {
-    setEditingAppId(app.id);
+    setEditingApp(app);
+    const unis = getUniversities(app);
     setAppForm({
       semester: app.semester || CURRENT_SEMESTER,
       student_faculty: app.student_faculty || student?.faculty || FACULTIES[0],
+      course: app.course ? String(app.course) : student?.course ? String(student.course) : "2",
       student_group: app.student_group || student?.group_name || "",
       student_phone: app.student_phone || student?.phone || "",
       student_gpa: app.student_gpa ? String(app.student_gpa) : "3.5",
-      purpose: app.purpose,
-      university_name: app.university_name,
+      birth_date: app.birth_date ?? "",
+      education_level: app.education_level || EDUCATION_LEVELS[0],
+      study_form: app.study_form || STUDY_FORMS[0],
+      participation: app.participation || PARTICIPATION[0],
+      funding_source: app.funding_source || "За счёт университета",
+      specialty: app.specialty ?? "",
+      universities: unis.length > 0 ? unis : [{ name: "", country: "" }],
+      social_status: app.social_status ?? [],
     });
-    setFiles([]);
-    setActiveTab("apply");
-    toast("Загрузите исправленные документы и отправьте заявку повторно", { icon: "📝" });
-  };
 
-  // Открыть собственный загруженный документ
-  const openDoc = async (path?: string) => {
-    if (!path) return;
-    const url = await getDocumentUrl(path);
-    if (url) {
-      window.open(url, "_blank", "noopener,noreferrer");
-    } else {
-      toast.error("Не удалось открыть документ");
+    const existingDocs = getDocuments(app);
+    const draftMap: Record<string, DocDraft> = {};
+    for (const d of existingDocs) {
+      draftMap[d.type] = {
+        file: null,
+        existingName: d.name,
+        existingPath: d.path,
+        comment: d.comment ?? "",
+      };
     }
+    setDocsDraft(draftMap);
+    setActiveTab("apply");
+    toast("Исправьте отмеченные документы/данные и отправьте заявку повторно", { icon: "📝" });
   };
 
-  // Отправка заявки: файлы уезжают в Storage, в БД — только пути
-  const sendApplication = async () => {
-    if (!student) return;
-    if (!appForm.university_name.trim()) {
-      toast.error("Укажите университет назначения");
+  const setDocFile = (type: string, file: File | null) => {
+    if (file && file.size > 5 * 1024 * 1024) {
+      toast.error(`Файл «${file.name}» превышает 5 МБ`);
       return;
     }
-    if (!appForm.purpose.trim()) {
-      toast.error("Укажите цель поездки");
+    setDocsDraft((prev) => ({
+      ...prev,
+      [type]: {
+        file,
+        existingName: file ? null : prev[type]?.existingName ?? null,
+        existingPath: file ? null : prev[type]?.existingPath ?? null,
+        comment: prev[type]?.comment ?? "",
+      },
+    }));
+  };
+
+  const setDocComment = (type: string, comment: string) => {
+    setDocsDraft((prev) => ({
+      ...prev,
+      [type]: {
+        file: prev[type]?.file ?? null,
+        existingName: prev[type]?.existingName ?? null,
+        existingPath: prev[type]?.existingPath ?? null,
+        comment,
+      },
+    }));
+  };
+
+  const toggleSocial = (item: string) => {
+    setAppForm((prev) => {
+      const exists = prev.social_status.includes(item);
+      return {
+        ...prev,
+        social_status: exists
+          ? prev.social_status.filter((s) => s !== item)
+          : [...prev.social_status, item],
+      };
+    });
+  };
+
+  const updateUni = (idx: number, key: "name" | "country", val: string) => {
+    setAppForm((prev) => ({
+      ...prev,
+      universities: prev.universities.map((u, i) => (i === idx ? { ...u, [key]: val } : u)),
+    }));
+  };
+
+  const addUni = () => {
+    if (appForm.universities.length >= MAX_UNIVERSITIES) return;
+    setAppForm((prev) => ({
+      ...prev,
+      universities: [...prev.universities, { name: "", country: "" }],
+    }));
+  };
+
+  const removeUni = (idx: number) => {
+    if (appForm.universities.length <= 1) return;
+    setAppForm((prev) => ({
+      ...prev,
+      universities: prev.universities.filter((_, i) => i !== idx),
+    }));
+  };
+
+  // Отправка заявки
+  const sendApplication = async () => {
+    if (!student) return;
+    if (!appForm.birth_date) {
+      toast.error("Укажите дату рождения");
+      return;
+    }
+    if (!appForm.specialty.trim()) {
+      toast.error("Укажите специальность с шифром (например, 6B06101 — Информационные системы)");
+      return;
+    }
+    if (!appForm.student_group.trim()) {
+      toast.error("Укажите вашу учебную группу");
+      return;
+    }
+    if (!appForm.student_phone.trim()) {
+      toast.error("Укажите телефон для связи");
       return;
     }
     const gpaNum = parseFloat(appForm.student_gpa.replace(",", "."));
@@ -167,101 +310,146 @@ export default function StudentDashboard() {
       toast.error("Укажите корректный GPA (от 0.0 до 4.0)");
       return;
     }
-    if (files.length === 0) {
-      toast.error("Прикрепите документы");
+
+    const validUnis = appForm.universities
+      .map((u) => ({ name: u.name.trim(), country: u.country.trim() }))
+      .filter((u) => u.name.length > 0);
+
+    if (validUnis.length === 0) {
+      toast.error("Укажите хотя бы один принимающий вуз и страну");
       return;
+    }
+    if (validUnis.some((u) => !u.country)) {
+      toast.error("Укажите страну для каждого выбранного вуза");
+      return;
+    }
+
+    // Проверяем список документов: для обязательных должен быть либо файл, либо комментарий
+    const activeDocTypes = [
+      ...DOCUMENT_TYPES,
+      ...(appForm.social_status.length > 0 ? [SOCIAL_DOCUMENT] : []),
+    ];
+
+    for (const dt of activeDocTypes) {
+      const d = docsDraft[dt.type];
+      const hasFile = Boolean(d?.file || d?.existingPath);
+      const hasComment = Boolean(d?.comment?.trim());
+      if (dt.required && !hasFile && !hasComment) {
+        toast.error(`Документ «${dt.label}»: прикрепите файл или напишите комментарий`);
+        return;
+      }
     }
 
     setSending(true);
-    const appId = editingAppId ?? crypto.randomUUID();
-    const uploaded = await uploadDocuments(
-      student.id,
-      appId,
-      files.map((f) => f.file)
-    );
+    const appId = editingApp?.id ?? crypto.randomUUID();
+    const compiledDocs: AppDocument[] = [];
+    const fileNames: string[] = [];
+    const filePaths: string[] = [];
 
-    if ("error" in uploaded) {
-      toast.error(uploaded.error);
-      setSending(false);
-      return;
+    for (const dt of activeDocTypes) {
+      const d = docsDraft[dt.type];
+      let finalName = d?.existingName ?? null;
+      let finalPath = d?.existingPath ?? null;
+
+      if (d?.file) {
+        const res = await uploadDocument(student.id, appId, d.file, dt.type);
+        if ("error" in res) {
+          toast.error(res.error);
+          setSending(false);
+          return;
+        }
+        finalName = d.file.name;
+        finalPath = res.path;
+      }
+
+      if (finalPath && finalName) {
+        fileNames.push(finalName);
+        filePaths.push(finalPath);
+      }
+
+      if (finalPath || d?.comment?.trim()) {
+        compiledDocs.push({
+          type: dt.type,
+          label: dt.label,
+          name: finalName,
+          path: finalPath,
+          comment: d?.comment?.trim() ?? "",
+        });
+      }
     }
 
-    // Даты по умолчанию для совместимости со старой схемой БД (пока не убрали NOT NULL)
+    // Если возвращал департамент — статус уходит обратно в департамент, иначе — на проверку факультету
+    const targetStatus =
+      editingApp &&
+      (editingApp.status === STATUS.DEPARTMENT_FIX || editingApp.status === STATUS.LEGACY_ERROR)
+        ? STATUS.DEPARTMENT_REVIEW
+        : STATUS.FACULTY_REVIEW;
+
+    const primaryUni = validUnis[0];
     const todayIso = new Date().toISOString().slice(0, 10);
 
-    const basePayload = {
+    const fullPayload = {
       student_name: student.name,
       student_email: student.email,
-      university_name: appForm.university_name.trim(),
-      purpose: appForm.purpose.trim(),
+      student_faculty: appForm.student_faculty,
+      course: parseInt(appForm.course, 10) || 2,
+      student_group: appForm.student_group.trim(),
+      student_phone: appForm.student_phone.trim(),
+      student_gpa: gpaNum,
+      birth_date: appForm.birth_date,
+      education_level: appForm.education_level,
+      study_form: appForm.study_form,
+      participation: appForm.participation,
+      funding_source: appForm.funding_source,
+      specialty: appForm.specialty.trim(),
+      semester: appForm.semester,
+      universities: validUnis,
+      university_name: `${primaryUni.name} (${primaryUni.country})`,
+      country: primaryUni.country,
+      social_status: appForm.social_status,
+      documents: compiledDocs,
+      purpose: appForm.specialty.trim(),
       date_from: todayIso,
       date_to: todayIso,
-      status: STATUS.FACULTY_REVIEW,
-      file_names: uploaded.names,
-      file_paths: uploaded.paths,
-    };
-
-    const fullPayload = {
-      ...basePayload,
-      semester: appForm.semester,
-      student_faculty: appForm.student_faculty,
-      student_group: appForm.student_group.trim() || null,
-      student_phone: appForm.student_phone.trim() || null,
-      student_gpa: gpaNum,
+      status: targetStatus,
+      file_names: fileNames,
+      file_paths: filePaths,
     };
 
     let dbError = null;
-
-    if (editingAppId) {
+    if (editingApp) {
       const { error } = await supabase
         .from("applications")
-        .update({ ...fullPayload, faculty_comment: "", dept_comment: "" })
-        .eq("id", editingAppId);
+        .update(fullPayload)
+        .eq("id", editingApp.id);
       dbError = error;
     } else {
       const { error } = await supabase
         .from("applications")
         .insert({ id: appId, student_id: student.id, ...fullPayload });
-      if (error && error.message?.includes("column")) {
-        // Фолбэк, если в Supabase ещё не запустили обновлённый migration.sql
-        const retry = await supabase
-          .from("applications")
-          .insert({ id: appId, student_id: student.id, ...basePayload });
-        dbError = retry.error;
-      } else {
-        dbError = error;
-      }
+      dbError = error;
     }
 
     if (dbError) {
-      toast.error("Ошибка отправки заявки: " + dbError.message);
+      toast.error(
+        "Ошибка сохранения заявки: " +
+          dbError.message +
+          " (убедитесь, что выполнен обновлённый migration.sql в Supabase)"
+      );
       setSending(false);
       return;
     }
 
-    // Отправляем email-уведомление студенту о принятии заявки на 1-й этап (На проверке факультетом)
-    fetch("/api/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        studentEmail: student.email,
-        studentName: student.name,
-        status: STATUS.FACULTY_REVIEW,
-      }),
-    }).catch(() => {});
+    // Отправляем email-уведомление студенту и координатору факультета / департаменту
+    notifyApplication(appId).catch(() => {});
 
     toast.success(
-      editingAppId
-        ? "Заявка обновлена и отправлена повторно! 🎉"
-        : "Заявка отправлена! Отслеживайте статус 🎉"
+      editingApp
+        ? "Исправленная заявка отправлена повторно! Уведомление отправлено на почту 🎉"
+        : "Заявка успешно подана! Уведомление отправлено на почту 🎉"
     );
-    setEditingAppId(null);
-    setFiles([]);
-    setAppForm((prev) => ({
-      ...prev,
-      purpose: "",
-      university_name: "",
-    }));
+    setEditingApp(null);
+    setDocsDraft({});
     setActiveTab("status");
 
     const { data } = await supabase
@@ -272,7 +460,7 @@ export default function StudentDashboard() {
     setSending(false);
   };
 
-  // Сохранение профиля: данные + аватар в Storage
+  // Сохранение профиля
   const saveProfile = async () => {
     if (!student) return;
     if (!profileForm.name.trim()) {
@@ -302,31 +490,14 @@ export default function StudentDashboard() {
       avatar_url: newAvatar,
     };
 
-    let { error } = await supabase.from("profiles").update(fullUpdate).eq("id", student.id);
-    if (error && error.message?.includes("column")) {
-      // Фолбэк на базовые колонки, если миграция ещё не применена
-      const retry = await supabase
-        .from("profiles")
-        .update({
-          name: profileForm.name.trim(),
-          group_name: profileForm.group_name.trim() || null,
-          avatar_url: newAvatar,
-        })
-        .eq("id", student.id);
-      error = retry.error;
-    }
-
+    const { error } = await supabase.from("profiles").update(fullUpdate).eq("id", student.id);
     if (error) {
-      toast.error("Ошибка сохранения");
+      toast.error("Ошибка сохранения: " + error.message);
       setSavingProfile(false);
       return;
     }
 
-    const updated: Profile = {
-      ...student,
-      ...fullUpdate,
-    };
-    setStudent(updated);
+    setStudent({ ...student, ...fullUpdate });
     setAvatarUrl(newAvatar);
     if (avatarInputRef.current) avatarInputRef.current.value = "";
     setSavingProfile(false);
@@ -346,6 +517,18 @@ export default function StudentDashboard() {
 
   const inputClass =
     "card w-full rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-blue-500 transition placeholder:text-slate-400";
+
+  const activeDocList = [
+    ...DOCUMENT_TYPES,
+    ...(appForm.social_status.length > 0 ? [SOCIAL_DOCUMENT] : []),
+  ];
+
+  const availableFunding = fundingOptions({
+    semester: appForm.semester,
+    study_form: appForm.study_form,
+    education_level: appForm.education_level,
+    participation: appForm.participation,
+  });
 
   return (
     <div className="flex min-h-screen bg-[color:var(--background)]">
@@ -408,7 +591,7 @@ export default function StudentDashboard() {
           ))}
         </nav>
 
-        <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
+        <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
           {/* Главная */}
           {activeTab === "home" && (
             <div className="space-y-4">
@@ -420,11 +603,11 @@ export default function StudentDashboard() {
                   Сәлеметсіз бе, {student.name.split(" ")[0]}! 👋
                 </h1>
                 <p className="mt-1 text-sm text-blue-100">
-                  Платформа академической мобильности АРСУ. Подайте заявку на предстоящий семестр и следите за её статусом.
+                  Платформа академической мобильности АРСУ. Подайте заявку, прикрепите пакет документов и отслеживайте каждый этап отбора.
                 </p>
                 <button
                   onClick={() => {
-                    setEditingAppId(null);
+                    setEditingApp(null);
                     setActiveTab("apply");
                   }}
                   className="mt-4 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-semibold backdrop-blur transition hover:bg-white/25"
@@ -484,13 +667,16 @@ export default function StudentDashboard() {
             <div className="card rounded-2xl p-5 shadow-sm">
               <div className="flex items-center justify-between">
                 <h1 className="text-base font-bold">
-                  {editingAppId
-                    ? "🔄 Исправление и повторная подача заявки"
-                    : "📤 Новая заявка на мобильность"}
+                  {editingApp
+                    ? "🔄 Исправление и повторная отправка заявки"
+                    : "📤 Анкета-заявка на академическую мобильность"}
                 </h1>
-                {editingAppId && (
+                {editingApp && (
                   <button
-                    onClick={() => setEditingAppId(null)}
+                    onClick={() => {
+                      setEditingApp(null);
+                      setDocsDraft({});
+                    }}
                     className="text-xs text-slate-400 hover:text-slate-600"
                   >
                     Отменить редактирование
@@ -498,114 +684,397 @@ export default function StudentDashboard() {
                 )}
               </div>
               <p className="mt-1 text-xs text-slate-500">
-                Заявка уйдёт на проверку вашему факультету, далее — в департамент академической мобильности.
+                Заполните все поля анкеты. После отправки уведомление придёт вам на почту и координатору вашего факультета.
               </p>
 
-              <div className="mt-4 space-y-3">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="text-xs text-slate-500">
-                    Поток (семестр) *
-                    <select
-                      value={appForm.semester}
-                      onChange={(e) => setAppForm({ ...appForm, semester: e.target.value })}
-                      className={`${inputClass} mt-1`}
-                    >
-                      {SEMESTERS.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="text-xs text-slate-500">
-                    Ваш факультет *
-                    <select
-                      value={appForm.student_faculty}
-                      onChange={(e) => setAppForm({ ...appForm, student_faculty: e.target.value })}
-                      className={`${inputClass} mt-1`}
-                    >
-                      {FACULTIES.map((f) => (
-                        <option key={f} value={f}>
-                          {f}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
+              {editingApp &&
+                (Object.keys(editingApp.doc_feedback ?? {}).length > 0 ||
+                  editingApp.faculty_comment ||
+                  editingApp.dept_comment) && (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                    <div className="flex items-center gap-1.5 font-semibold">
+                      <AlertTriangle size={14} /> Что нужно исправить:
+                    </div>
+                    {(editingApp.dept_comment || editingApp.faculty_comment) && (
+                      <div className="mt-1">
+                        💬 {editingApp.dept_comment || editingApp.faculty_comment}
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <label className="text-xs text-slate-500">
-                    Группа *
-                    <input
-                      value={appForm.student_group}
-                      onChange={(e) => setAppForm({ ...appForm, student_group: e.target.value })}
-                      placeholder="Например IT-202"
-                      className={`${inputClass} mt-1`}
-                    />
-                  </label>
-                  <label className="text-xs text-slate-500">
-                    Средний балл (GPA) *
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="4"
-                      value={appForm.student_gpa}
-                      onChange={(e) => setAppForm({ ...appForm, student_gpa: e.target.value })}
-                      placeholder="3.50"
-                      className={`${inputClass} mt-1`}
-                    />
-                  </label>
-                  <label className="text-xs text-slate-500">
-                    Телефон *
-                    <input
-                      value={appForm.student_phone}
-                      onChange={(e) => setAppForm({ ...appForm, student_phone: e.target.value })}
-                      placeholder="+7 700 000 00 00"
-                      className={`${inputClass} mt-1`}
-                    />
-                  </label>
-                </div>
+              <div className="mt-5 space-y-5">
+                {/* 1. Личные и учебные данные */}
+                <div className="space-y-3">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                    1. Сведения о студенте и обучении
+                  </div>
 
-                <label className="block text-xs text-slate-500">
-                  Принимающий университет *
-                  <input
-                    value={appForm.university_name}
-                    onChange={(e) => setAppForm({ ...appForm, university_name: e.target.value })}
-                    placeholder="Название вуза и город / страна *"
-                    className={`${inputClass} mt-1`}
-                  />
-                </label>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="text-xs text-slate-500">
+                      Поток (семестр) *
+                      <select
+                        value={appForm.semester}
+                        onChange={(e) => setAppForm({ ...appForm, semester: e.target.value })}
+                        className={`${inputClass} mt-1`}
+                      >
+                        {SEMESTERS.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs text-slate-500">
+                      Уровень образования *
+                      <select
+                        value={appForm.education_level}
+                        onChange={(e) =>
+                          setAppForm({ ...appForm, education_level: e.target.value })
+                        }
+                        className={`${inputClass} mt-1`}
+                      >
+                        {EDUCATION_LEVELS.map((lvl) => (
+                          <option key={lvl} value={lvl}>
+                            {lvl}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs text-slate-500">
+                      Дата рождения *
+                      <input
+                        type="date"
+                        value={appForm.birth_date}
+                        onChange={(e) => setAppForm({ ...appForm, birth_date: e.target.value })}
+                        className={`${inputClass} mt-1`}
+                      />
+                    </label>
+                  </div>
 
-                <label className="block text-xs text-slate-500">
-                  Цель поездки и направление обучения *
-                  <textarea
-                    value={appForm.purpose}
-                    onChange={(e) => setAppForm({ ...appForm, purpose: e.target.value })}
-                    placeholder="Обучение по программе академической мобильности, специальность, перезачёт кредитов…"
-                    rows={3}
-                    className={`${inputClass} mt-1 resize-none`}
-                  />
-                </label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs text-slate-500">
+                      Факультет *
+                      <select
+                        value={appForm.student_faculty}
+                        onChange={(e) =>
+                          setAppForm({ ...appForm, student_faculty: e.target.value })
+                        }
+                        className={`${inputClass} mt-1`}
+                      >
+                        {FACULTIES.map((f) => (
+                          <option key={f} value={f}>
+                            {f}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs text-slate-500">
+                      Специальность (с шифром ОП) *
+                      <input
+                        value={appForm.specialty}
+                        onChange={(e) => setAppForm({ ...appForm, specialty: e.target.value })}
+                        placeholder="Например: 6B06101 — Информационные системы"
+                        className={`${inputClass} mt-1`}
+                      />
+                    </label>
+                  </div>
 
-                <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 text-xs text-slate-600">
-                  <div className="font-semibold text-blue-800">📎 Рекомендуемый пакет документов:</div>
-                  <div className="mt-1">
-                    Транскрипт (GPA от 3.0), заявление, удостоверение личности / паспорт, письмо-приглашение (или мотивационное письмо), мед. справка 086-у.
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    <label className="text-xs text-slate-500">
+                      Курс *
+                      <select
+                        value={appForm.course}
+                        onChange={(e) => setAppForm({ ...appForm, course: e.target.value })}
+                        className={`${inputClass} mt-1`}
+                      >
+                        {COURSES.map((c) => (
+                          <option key={c} value={c}>
+                            {c} курс
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs text-slate-500">
+                      Группа *
+                      <input
+                        value={appForm.student_group}
+                        onChange={(e) => setAppForm({ ...appForm, student_group: e.target.value })}
+                        placeholder="IT-202"
+                        className={`${inputClass} mt-1`}
+                      />
+                    </label>
+                    <label className="text-xs text-slate-500">
+                      Средний балл (GPA) *
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="4"
+                        value={appForm.student_gpa}
+                        onChange={(e) => setAppForm({ ...appForm, student_gpa: e.target.value })}
+                        placeholder="3.50"
+                        className={`${inputClass} mt-1`}
+                      />
+                    </label>
+                    <label className="text-xs text-slate-500">
+                      Телефон *
+                      <input
+                        value={appForm.student_phone}
+                        onChange={(e) => setAppForm({ ...appForm, student_phone: e.target.value })}
+                        placeholder="+7 700 000 00 00"
+                        className={`${inputClass} mt-1`}
+                      />
+                    </label>
                   </div>
                 </div>
 
-                <FileUpload files={files} setFiles={setFiles} />
+                {/* 2. Форма обучения, кратность участия и источник финансирования */}
+                <div className="space-y-3 border-t border-[color:var(--border)] pt-4">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                    2. Форма обучения и финансирование
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs text-slate-500">
+                      Форма обучения (Грант / Платное) *
+                      <select
+                        value={appForm.study_form}
+                        onChange={(e) => setAppForm({ ...appForm, study_form: e.target.value })}
+                        className={`${inputClass} mt-1`}
+                      >
+                        {STUDY_FORMS.map((sf) => (
+                          <option key={sf} value={sf}>
+                            {sf}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs text-slate-500">
+                      Участие в программе мобильности *
+                      <select
+                        value={appForm.participation}
+                        onChange={(e) =>
+                          setAppForm({ ...appForm, participation: e.target.value })
+                        }
+                        className={`${inputClass} mt-1`}
+                      >
+                        {PARTICIPATION.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div>
+                    <div className="mb-1.5 text-xs text-slate-500">Источник финансирования *</div>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {availableFunding.map((opt) => {
+                        const selected = appForm.funding_source === opt.value;
+                        return (
+                          <label
+                            key={opt.value}
+                            className={`card flex flex-col justify-between rounded-xl p-3 text-xs transition ${
+                              !opt.allowed
+                                ? "cursor-not-allowed opacity-45"
+                                : selected
+                                  ? "cursor-pointer border-blue-500 bg-blue-50/70"
+                                  : "cursor-pointer hover:border-blue-300"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 font-semibold">
+                              <input
+                                type="radio"
+                                name="funding_source"
+                                disabled={!opt.allowed}
+                                checked={selected}
+                                onChange={() =>
+                                  opt.allowed &&
+                                  setAppForm({ ...appForm, funding_source: opt.value })
+                                }
+                              />
+                              {opt.value}
+                            </div>
+                            <div className="mt-1 text-[11px] text-slate-500">{opt.hint}</div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Принимающие вузы и страны (до 3 вузов) */}
+                <div className="space-y-3 border-t border-[color:var(--border)] pt-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                      3. Принимающие вузы и страны (до {MAX_UNIVERSITIES} вузов по приоритету)
+                    </div>
+                    {appForm.universities.length < MAX_UNIVERSITIES && (
+                      <button
+                        type="button"
+                        onClick={addUni}
+                        className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                      >
+                        <Plus size={13} /> Добавить вуз ({appForm.universities.length}/
+                        {MAX_UNIVERSITIES})
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    {appForm.universities.map((u, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
+                          {idx + 1}
+                        </span>
+                        <input
+                          value={u.name}
+                          onChange={(e) => updateUni(idx, "name", e.target.value)}
+                          placeholder={`Принимающий вуз №${idx + 1} *`}
+                          className={inputClass}
+                        />
+                        <input
+                          value={u.country}
+                          onChange={(e) => updateUni(idx, "country", e.target.value)}
+                          placeholder="Страна *"
+                          className={`${inputClass} max-w-[200px]`}
+                        />
+                        {appForm.universities.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeUni(idx)}
+                            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                            title="Удалить вуз"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 4. Социальное положение */}
+                <div className="space-y-2 border-t border-[color:var(--border)] pt-4">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                    4. Социальное положение (если относится — отметьте и прикрепите подтверждающий документ ниже)
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {SOCIAL_STATUSES.map((st) => {
+                      const active = appForm.social_status.includes(st);
+                      return (
+                        <label
+                          key={st}
+                          className={`card cursor-pointer rounded-xl px-3.5 py-2 text-xs font-medium transition ${
+                            active ? "border-blue-500 bg-blue-50 text-blue-700" : ""
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mr-2"
+                            checked={active}
+                            onChange={() => toggleSocial(st)}
+                          />
+                          {st}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 5. Пакет документов: к каждому пункту файл и/или комментарий */}
+                <div className="space-y-3 border-t border-[color:var(--border)] pt-4">
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                      5. Пакет документов (по каждому пункту прикрепите файл или укажите комментарий)
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      Форматы: PDF, JPG, PNG, DOC, DOCX — до 5 МБ каждый файл.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {activeDocList.map((dt) => {
+                      const draft = docsDraft[dt.type];
+                      const fbNote = editingApp?.doc_feedback?.[dt.type];
+                      const fileName = draft?.file?.name ?? draft?.existingName ?? null;
+                      return (
+                        <div
+                          key={dt.type}
+                          className={`card rounded-xl p-3 ${
+                            fbNote ? "border-amber-400 bg-amber-50/40" : ""
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-xs font-semibold">
+                              {dt.label}{" "}
+                              {dt.required ? (
+                                <span className="text-red-500">*</span>
+                              ) : (
+                                <span className="font-normal text-slate-400">(необязательно)</span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {fileName ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs text-blue-700">
+                                  <FileText size={12} /> {fileName}
+                                  <button
+                                    type="button"
+                                    onClick={() => setDocFile(dt.type, null)}
+                                    aria-label="Удалить файл"
+                                  >
+                                    <X size={12} className="hover:text-red-500" />
+                                  </button>
+                                </span>
+                              ) : null}
+
+                              <label className="card inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium hover:border-blue-400">
+                                <Paperclip size={13} />
+                                {fileName ? "Заменить файл" : "Прикрепить файл"}
+                                <input
+                                  type="file"
+                                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                                  hidden
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0] ?? null;
+                                    if (f) setDocFile(dt.type, f);
+                                    e.target.value = "";
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          </div>
+
+                          {fbNote && (
+                            <div className="mt-1.5 text-xs font-medium text-amber-700">
+                              ⚠️ Замечание проверяющего: {fbNote}
+                            </div>
+                          )}
+
+                          <input
+                            value={draft?.comment ?? ""}
+                            onChange={(e) => setDocComment(dt.type, e.target.value)}
+                            placeholder="Комментарий к документу (например: «сдам до пятницы» или пояснение)"
+                            className="mt-2 w-full rounded-lg border border-[color:var(--border)] bg-transparent px-3 py-1.5 text-xs outline-none focus:border-blue-400"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
 
                 <button
                   onClick={sendApplication}
                   disabled={sending}
-                  className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-700 disabled:opacity-60"
+                  className="w-full rounded-xl bg-blue-600 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-700 disabled:opacity-60"
                 >
                   {sending
-                    ? "⏳ Отправляем…"
-                    : editingAppId
-                      ? "Сохранить и отправить повторно"
+                    ? "⏳ Загружаем документы и отправляем заявку…"
+                    : editingApp
+                      ? "Сохранить исправления и отправить заново"
                       : "Отправить заявку"}
                 </button>
               </div>
@@ -628,10 +1097,9 @@ export default function StudentDashboard() {
                 </div>
               ) : (
                 apps.map((app) => {
-                  const isRejected =
-                    app.status === STATUS.REJECTED || app.status === STATUS.FACULTY_REJECTED;
+                  const canResubmit = RESUBMITTABLE.includes(app.status);
                   return (
-                    <article key={app.id} className="card rounded-2xl p-4 shadow-sm">
+                    <article key={app.id} className="card space-y-3 rounded-2xl p-4 shadow-sm">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
                           <span className="text-sm font-semibold">{app.university_name}</span>
@@ -643,40 +1111,23 @@ export default function StudentDashboard() {
                         </div>
                         <StatusBadge status={app.status} />
                       </div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        📅 Подана {new Date(app.created_at).toLocaleDateString("ru-RU")}
+                      <div className="text-xs text-slate-500">
+                        📅 Подана {formatDate(app.created_at)}
                         {app.student_faculty && <> · 🏛 {app.student_faculty}</>}
-                        {app.student_group && <> · {app.student_group}</>}
+                        {app.specialty && <> · 📚 {app.specialty}</>}
                       </div>
-                      <div className="mt-3">
-                        <StatusTimeline status={app.status} />
-                      </div>
-                      {isRejected && (app.dept_comment || app.faculty_comment) && (
-                        <div className="mt-2 rounded-lg bg-red-50 p-3 text-xs text-red-700">
-                          💬 Причина: {app.dept_comment || app.faculty_comment}
-                        </div>
-                      )}
-                      {app.file_names.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          {app.file_names.map((name, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => openDoc(app.file_paths[i])}
-                              className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] text-blue-700 transition hover:bg-blue-100"
-                            >
-                              <FileText size={11} /> {name} <ExternalLink size={10} />
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {isRejected && (
-                        <div className="mt-3 border-t border-[color:var(--border)] pt-3">
+
+                      <StatusTimeline status={app.status} />
+
+                      <ApplicationDetails app={app} />
+
+                      {canResubmit && (
+                        <div className="border-t border-[color:var(--border)] pt-3">
                           <button
                             onClick={() => startResubmit(app)}
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-700"
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-blue-700"
                           >
-                            <RotateCcw size={13} /> Исправить и подать повторно
+                            <RotateCcw size={13} /> Исправить документы и сдать заново
                           </button>
                         </div>
                       )}
@@ -710,7 +1161,6 @@ export default function StudentDashboard() {
             <div className="card rounded-2xl p-5 shadow-sm">
               <h1 className="text-base font-bold">👤 Мой профиль</h1>
 
-              {/* Аватар */}
               <div className="mt-4 flex items-center gap-4">
                 <button
                   onClick={() => avatarInputRef.current?.click()}
@@ -788,7 +1238,7 @@ export default function StudentDashboard() {
                       onChange={(e) => setProfileForm({ ...profileForm, course: e.target.value })}
                       className={`${inputClass} mt-1`}
                     >
-                      {["1", "2", "3", "4", "5"].map((c) => (
+                      {COURSES.map((c) => (
                         <option key={c} value={c}>
                           {c} курс
                         </option>
@@ -835,8 +1285,7 @@ export default function StudentDashboard() {
                 </div>
                 <div className="mt-1.5 flex items-start gap-1.5">
                   <MapPin size={12} className="mt-0.5 shrink-0 text-blue-500" />
-                  Заявка проходит: факультет → департамент → тестирование → интервью → решение.
-                  На каждом шаге придёт письмо на {student.email}.
+                  Заявка проходит: проверка факультета → рекомендация → рассмотрение департаментом → тестирование → интервью → итоговое решение. На каждом этапе вам приходит уведомление на {student.email}.
                 </div>
               </div>
             </div>
