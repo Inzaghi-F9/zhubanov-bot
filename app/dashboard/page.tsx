@@ -19,7 +19,6 @@ import {
   Download,
   BookOpen,
   CheckCircle2,
-  Globe,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getProfile, signOut } from "@/lib/auth";
@@ -125,7 +124,6 @@ export default function StudentDashboard() {
   // Черновики по каждому документу из пакета
   const [docsDraft, setDocsDraft] = useState<Record<string, DocDraft>>({});
   const [rulesAccepted, setRulesAccepted] = useState(false);
-  const [showPartnersList, setShowPartnersList] = useState(false);
   const [sending, setSending] = useState(false);
 
   // Профиль
@@ -731,97 +729,44 @@ export default function StudentDashboard() {
                 )}
 
                 <div className="space-y-5">
-                  {/* 0. Талаптар мен серіктес ЖОО тізімі (өтінім берер алдында танысу) */}
-                  <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 text-xs">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-sm font-bold text-blue-900">
-                        <BookOpen size={16} />
-                        Өтінім берер алдында ережелермен және университеттер тізімімен танысыңыз
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowPartnersList(!showPartnersList)}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 shadow-sm hover:bg-blue-100 transition"
-                      >
-                        <Globe size={13} />
-                        {showPartnersList
-                          ? "Университеттер тізімін жасыру"
-                          : `Серіктес университеттер тізімі (${ALL_PARTNER_UNIVERSITIES.length} ЖОО)`}
-                      </button>
+                  {/* 0. Талаптар мен ережелер (өтінім берер алдында танысу) */}
+                  <div className="rounded-2xl border border-blue-500/25 bg-blue-500/5 p-4 text-xs">
+                    <div className="flex items-center gap-2 text-sm font-bold text-blue-500">
+                      <BookOpen size={16} />
+                      Өтінім берер алдында ережелермен танысыңыз
                     </div>
 
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      <div className="rounded-xl bg-white p-3 shadow-sm">
-                        <div className="font-bold text-slate-800">
+                      <div className="card rounded-xl p-3.5 shadow-sm">
+                        <div className="font-bold">
                           Университет қаражаты есебінен бара алатын үміткерлерге қойылатын жалпы талаптар:
                         </div>
-                        <ul className="mt-2 space-y-1 text-slate-600">
+                        <ul className="mt-2.5 space-y-1.5 opacity-80">
                           {RULES_UNIVERSITY_FUNDED.map((r) => (
-                            <li key={r} className="flex items-start gap-1.5">
+                            <li key={r} className="flex items-start gap-2">
                               <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-emerald-500" />
                               <span>{r}</span>
                             </li>
                           ))}
                         </ul>
                       </div>
-                      <div className="flex flex-col justify-between rounded-xl bg-white p-3 shadow-sm">
-                        <div>
-                          <div className="font-bold text-slate-800">
-                            Өз қаражаты есебінен баратын білім алушыларға:
-                          </div>
-                          <p className="mt-2 leading-relaxed text-slate-600">{RULES_SELF_FUNDED}</p>
+                      <div className="card rounded-xl p-3.5 shadow-sm">
+                        <div className="font-bold">
+                          Өз қаражаты есебінен баратын білім алушыларға:
                         </div>
-                        <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-2.5">
-                          <a
-                            href="/templates/otinish-rektor.doc"
-                            download
-                            className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
-                          >
-                            <Download size={12} /> Ректор атына өтініш (.doc)
-                          </a>
-                          <a
-                            href="/templates/densaulyk-deklaraciya.doc"
-                            download
-                            className="inline-flex items-center gap-1 rounded-lg bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700 hover:bg-teal-100"
-                          >
-                            <Download size={12} /> Денсаулық декларациясы (.doc)
-                          </a>
-                        </div>
+                        <p className="mt-2.5 leading-relaxed opacity-80">{RULES_SELF_FUNDED}</p>
                       </div>
                     </div>
 
-                    {showPartnersList && (
-                      <div className="mt-3 max-h-72 overflow-y-auto rounded-xl border border-blue-100 bg-white p-3">
-                        <div className="mb-2 font-bold text-slate-800">
-                          Қабылдаушы серіктес университеттер ({PARTNER_COUNTRIES.length} ел,{" "}
-                          {ALL_PARTNER_UNIVERSITIES.length} ЖОО):
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          {PARTNER_COUNTRIES.map((pc) => (
-                            <div key={pc.country} className="rounded-lg bg-slate-50 p-2.5">
-                              <div className="font-bold text-slate-800">
-                                {pc.flag} {pc.country}
-                              </div>
-                              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] text-slate-600">
-                                {pc.universities.map((u) => (
-                                  <li key={u}>{u}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl bg-white px-3 py-2.5 font-semibold text-slate-800 shadow-sm">
+                    <label className="card mt-3 flex cursor-pointer items-center gap-2.5 rounded-xl px-3.5 py-2.5 font-semibold transition hover:border-blue-500">
                       <input
                         type="checkbox"
                         checked={rulesAccepted}
                         onChange={(e) => setRulesAccepted(e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                        className="h-4 w-4 rounded border-slate-400 text-blue-600"
                       />
                       <span>
-                        Жоғарыдағы талаптармен, қажетті құжаттар тізімімен және серіктес университеттер тізімімен толық таныстым *
+                        Жоғарыдағы талаптармен және қажетті құжаттар тізімімен толық таныстым *
                       </span>
                     </label>
                   </div>
