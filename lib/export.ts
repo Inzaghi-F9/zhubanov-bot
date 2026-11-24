@@ -81,7 +81,16 @@ export function fullRow(a: Application, i: number): Cell[] {
     a.faculty_comment,
     a.dept_comment,
     a.test_result,
-    a.interview_result,
+    Array.isArray(a.interviews) && a.interviews.length > 0
+      ? a.interviews
+          .map(
+            (iv) =>
+              `${iv.university}${iv.country ? ` (${iv.country})` : ""} [${iv.language}]: ${
+                iv.result ?? "ожидается"
+              }`
+          )
+          .join("; ")
+      : a.interview_result,
     a.decision_info?.decision,
     a.decision_info?.university,
     a.decision_info?.country,

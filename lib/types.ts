@@ -38,7 +38,14 @@ export const SOCIAL_STATUSES = [
   "Ребёнок-сирота / без попечения родителей",
 ] as const;
 
-export const LANGUAGES = ["Казахский", "Русский", "Английский"] as const;
+export const LANGUAGES = [
+  "Казахский",
+  "Русский",
+  "Английский",
+  "Турецкий",
+  "Китайский",
+  "Корейский",
+] as const;
 export const EVENT_FORMATS = ["Офлайн (очно)", "Онлайн"] as const;
 export const MAX_UNIVERSITIES = 3;
 
@@ -162,6 +169,14 @@ export interface EventInfo {
   note?: string;
 }
 
+export interface InterviewEntry extends EventInfo {
+  id: string;
+  university: string;
+  country: string;
+  result?: "Прошёл" | "Не прошёл" | null;
+  result_comment?: string;
+}
+
 export interface DecisionInfo {
   decision: string;
   university: string;
@@ -211,6 +226,7 @@ export interface Application {
   test_result?: string | null;
   interview_info?: EventInfo | null;
   interview_result?: string | null;
+  interviews?: InterviewEntry[] | null;
   decision_info?: DecisionInfo | null;
   university_name: string;
   purpose: string;

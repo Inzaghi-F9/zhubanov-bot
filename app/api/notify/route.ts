@@ -136,7 +136,32 @@ function detailsHtml(app: Application): string {
     parts.push(box("#22c55e", `⏰ Дедлайн: <b>${esc(formatDate(app.faculty_deadline))}</b>`));
   }
   if (s === STATUS.TEST) parts.push(eventHtml("Детали тестирования", app.test_info));
-  if (s === STATUS.INTERVIEW) parts.push(eventHtml("Детали интервью", app.interview_info));
+  if (s === STATUS.INTERVIEW || s === STATUS.INTERVIEW_PASSED || s === STATUS.INTERVIEW_FAILED) {
+    if (Array.isArray(app.interviews) && app.interviews.length > 0) {
+      parts.push(
+        ...app.interviews.map((iv, idx) =>
+          box(
+            iv.result === "Прошёл" ? "#16a34a" : iv.result === "Не прошёл" ? "#dc2626" : "#0d9488",
+            `<strong>🎤 Интервью #${idx + 1}: ${esc(iv.university)}${
+              iv.country ? ` (${esc(iv.country)})` : ""
+            }</strong><br>📅 Дата: ${esc(formatDate(iv.date))}<br>🕐 Время: ${esc(iv.time)}<br>📍 Место: ${esc(
+              iv.place
+            )}<br>🗣 Язык: ${esc(iv.language)}<br>💻 Формат: ${esc(iv.format)}${
+              iv.note ? `<br>📝 ${esc(iv.note)}` : ""
+            }${
+              iv.result
+                ? `<br><b>Результат: ${esc(iv.result)}</b>${
+                    iv.result_comment ? ` (${esc(iv.result_comment)})` : ""
+                  }`
+                : ""
+            }`
+          )
+        )
+      );
+    } else if (s === STATUS.INTERVIEW) {
+      parts.push(eventHtml("Детали интервью", app.interview_info));
+    }
+  }
   if ((s === STATUS.ACCEPTED || s === STATUS.NOT_ACCEPTED) && app.decision_info) {
     const d = app.decision_info;
     parts.push(

@@ -138,7 +138,25 @@ export function ApplicationDetails({ app }: { app: Application }) {
       )}
 
       <EventBlock title="📝 Тестирование" info={app.test_info} result={app.test_result} />
-      <EventBlock title="🎤 Интервью" info={app.interview_info} result={app.interview_result} />
+
+      {Array.isArray(app.interviews) && app.interviews.length > 0 ? (
+        <div className="space-y-2">
+          {app.interviews.map((iv, idx) => (
+            <EventBlock
+              key={iv.id || idx}
+              title={`🎤 Интервью #${idx + 1}: ${iv.university}${iv.country ? ` (${iv.country})` : ""}`}
+              info={iv}
+              result={
+                iv.result
+                  ? `${iv.result}${iv.result_comment ? ` — ${iv.result_comment}` : ""}`
+                  : undefined
+              }
+            />
+          ))}
+        </div>
+      ) : (
+        <EventBlock title="🎤 Интервью" info={app.interview_info} result={app.interview_result} />
+      )}
 
       {app.decision_info && (
         <div

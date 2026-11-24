@@ -360,3 +360,53 @@ grant execute on function public.coordinator_emails(text) to authenticated;
 grant execute on function public.admin_emails() to authenticated;
 
 create index if not exists applications_course_idx on public.applications (course);
+
+-- ЧАСТЬ 4: несколько интервью для одного студента (по каждому выбранному вузу/языку)
+alter table public.applications add column if not exists interviews jsonb not null default '[]';
+
+create or replace function public.guard_application_write() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.is_staff() then
+    return new;
+  end if;
+
+  if tg_op = 'INSERT' then
+    new.status := 'На проверке (факультет)';
+    new.faculty_comment := '';
+    new.dept_comment := '';
+    new.doc_feedback := '{}'::jsonb;
+    new.faculty_deadline := null;
+    new.test_info := null;
+    new.test_result := null;
+    new.interview_info := null;
+    new.interview_result := null;
+    new.interviews := '[]'::jsonb;
+    new.decision_info := null;
+    return new;
+  end if;
+
+  if old.status not in ('На исправление (факультет)', 'Не рекомендован факультетом', 'Отклонён факультетом',
+                        'На исправление (департамент)', 'Ошибка') then
+    raise exception 'Заявку можно изменить только после возврата на исправление';
+  end if;
+
+  if old.status in ('На исправление (департамент)', 'Ошибка') then
+    new.status := 'На рассмотрении (департамент)';
+  else
+    new.status := 'На проверке (факультет)';
+  end if;
+
+  new.student_id       := old.student_id;
+  new.faculty_comment  := old.faculty_comment;
+  new.dept_comment     := old.dept_comment;
+  new.doc_feedback     := old.doc_feedback;
+  new.faculty_deadline := old.faculty_deadline;
+  new.test_info        := old.test_info;
+  new.test_result      := old.test_result;
+  new.interview_info   := old.interview_info;
+  new.interview_result := old.interview_result;
+  new.interviews       := old.interviews;
+  new.decision_info    := old.decision_info;
+  return new;
+end $$;

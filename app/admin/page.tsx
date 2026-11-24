@@ -38,6 +38,8 @@ import {
   EventForm,
   ResultForm,
   DecisionForm,
+  InterviewInviteForm,
+  InterviewsResultForm,
 } from "@/components/ReviewForms";
 import {
   BarChart,
@@ -852,14 +854,15 @@ export default function AdminDashboard() {
                               }}
                             />
                           ) : currentMode === "invite_interview" ? (
-                            <EventForm
-                              kind="interview"
-                              initial={app.interview_info}
+                            <InterviewInviteForm
+                              app={app}
                               onCancel={() => setActionFor({ id: "", mode: null })}
-                              onSubmit={async (info) => {
+                              onSubmit={async (entry) => {
+                                const nextList = [...(app.interviews ?? []), entry];
                                 const ok = await applyUpdate(app.id, {
                                   status: STATUS.INTERVIEW,
-                                  interview_info: info,
+                                  interview_info: entry,
+                                  interviews: nextList,
                                 });
                                 if (ok) {
                                   setActionFor({ id: "", mode: null });
@@ -868,23 +871,45 @@ export default function AdminDashboard() {
                               }}
                             />
                           ) : currentMode === "result_interview" ? (
-                            <ResultForm
-                              title="🎤 Результат интервью (Прошёл / Не прошёл)"
-                              onCancel={() => setActionFor({ id: "", mode: null })}
-                              onSubmit={async (passed, comment) => {
-                                const ok = await applyUpdate(app.id, {
-                                  status: passed
-                                    ? STATUS.INTERVIEW_PASSED
-                                    : STATUS.INTERVIEW_FAILED,
-                                  interview_result: passed ? "Прошёл" : "Не прошёл",
-                                  dept_comment: comment || app.dept_comment,
-                                });
-                                if (ok) {
-                                  setActionFor({ id: "", mode: null });
-                                  loadApps();
-                                }
-                              }}
-                            />
+                            (app.interviews ?? []).length > 0 ? (
+                              <InterviewsResultForm
+                                app={app}
+                                onCancel={() => setActionFor({ id: "", mode: null })}
+                                onSubmit={async (updated, summary, allFailed, anyPassed) => {
+                                  const ok = await applyUpdate(app.id, {
+                                    status: allFailed
+                                      ? STATUS.INTERVIEW_FAILED
+                                      : anyPassed
+                                        ? STATUS.INTERVIEW_PASSED
+                                        : STATUS.INTERVIEW,
+                                    interviews: updated,
+                                    interview_result: summary,
+                                  });
+                                  if (ok) {
+                                    setActionFor({ id: "", mode: null });
+                                    loadApps();
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <ResultForm
+                                title="🎤 Результат интервью (Прошёл / Не прошёл)"
+                                onCancel={() => setActionFor({ id: "", mode: null })}
+                                onSubmit={async (passed, comment) => {
+                                  const ok = await applyUpdate(app.id, {
+                                    status: passed
+                                      ? STATUS.INTERVIEW_PASSED
+                                      : STATUS.INTERVIEW_FAILED,
+                                    interview_result: passed ? "Прошёл" : "Не прошёл",
+                                    dept_comment: comment || app.dept_comment,
+                                  });
+                                  if (ok) {
+                                    setActionFor({ id: "", mode: null });
+                                    loadApps();
+                                  }
+                                }}
+                              />
+                            )
                           ) : currentMode === "decision" ? (
                             <DecisionForm
                               app={app}

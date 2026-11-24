@@ -11,6 +11,7 @@ import {
   type Application,
   type EventInfo,
   type DecisionInfo,
+  type InterviewEntry,
 } from "@/lib/types";
 
 const input =
@@ -375,6 +376,256 @@ export function DecisionForm({
             return void toast.error("Укажите вуз и страну");
           }
           await onSubmit(accepted ? info : { ...info, university: "", country: "" });
+        }}
+      />
+    </Panel>
+  );
+}
+
+/** Приглашение на интервью по конкретному выбранному вузу и языку (можно назначать несколько разным вузам) */
+export function InterviewInviteForm({
+  app,
+  onSubmit,
+  onCancel,
+}: {
+  app: Application;
+  onSubmit: (entry: InterviewEntry) => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  const unis = getUniversities(app);
+  const existing = app.interviews ?? [];
+  const [uniIdx, setUniIdx] = useState(0);
+  const selectedUni = unis[uniIdx] ?? { name: app.university_name, country: app.country ?? "" };
+
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [place, setPlace] = useState("");
+  const [selectedLangs, setSelectedLangs] = useState<string[]>([]);
+  const [customLang, setCustomLang] = useState("");
+  const [format, setFormat] = useState<string>(EVENT_FORMATS[0]);
+  const [note, setNote] = useState("");
+
+  const toggleLang = (l: string) => {
+    setSelectedLangs((prev) => (prev.includes(l) ? prev.filter((x) => x !== l) : [...prev, l]));
+  };
+
+  return (
+    <Panel title="🎤 Назначить интервью для выбранного вуза / языка">
+      {existing.length > 0 && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-2 text-[11px] text-blue-800">
+          <div className="font-semibold">Уже назначенные интервью ({existing.length}):</div>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            {existing.map((iv) => (
+              <li key={iv.id}>
+                <b>{iv.university}</b> — {iv.date} {iv.time}, {iv.language}
+                {iv.result ? ` (${iv.result})` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {unis.length > 0 && (
+        <label className={label}>
+          Выберите вуз (из списка студента) *
+          <select
+            value={uniIdx}
+            onChange={(e) => setUniIdx(Number(e.target.value))}
+            className={`${input} mt-1`}
+          >
+            {unis.map((u, i) => (
+              <option key={i} value={i}>
+                {i + 1}) {u.name} {u.country ? `(${u.country})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className={label}>
+          Дата *
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`${input} mt-1`} />
+        </label>
+        <label className={label}>
+          Время *
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={`${input} mt-1`} />
+        </label>
+      </div>
+
+      <label className={label}>
+        Место / ссылка *
+        <input
+          value={place}
+          onChange={(e) => setPlace(e.target.value)}
+          placeholder="Главный корпус, каб. 205 или ссылка Zoom / Meet"
+          className={`${input} mt-1`}
+        />
+      </label>
+
+      <div className={label}>
+        Язык интервью *
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          {LANGUAGES.map((l) => (
+            <label
+              key={l}
+              className={`card cursor-pointer rounded-lg px-2.5 py-1 text-xs ${
+                selectedLangs.includes(l) ? "border-blue-500 text-blue-700" : ""
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="mr-1"
+                checked={selectedLangs.includes(l)}
+                onChange={() => toggleLang(l)}
+              />
+              {l}
+            </label>
+          ))}
+        </div>
+        <input
+          value={customLang}
+          onChange={(e) => setCustomLang(e.target.value)}
+          placeholder="Или другой язык (например: Итальянский, Немецкий)"
+          className={`${input} mt-1.5`}
+        />
+      </div>
+
+      <label className={label}>
+        Формат *
+        <select value={format} onChange={(e) => setFormat(e.target.value)} className={`${input} mt-1`}>
+          {EVENT_FORMATS.map((f) => (
+            <option key={f}>{f}</option>
+          ))}
+        </select>
+      </label>
+
+      <label className={label}>
+        Дополнительно
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Комиссия, документы с собой и т.п."
+          className={`${input} mt-1`}
+        />
+      </label>
+
+      <Buttons
+        submitLabel="Назначить интервью и уведомить студента"
+        color="bg-teal-600 hover:bg-teal-700"
+        onCancel={onCancel}
+        onSubmit={async () => {
+          const langStr = [
+            ...LANGUAGES.filter((l) => selectedLangs.includes(l)),
+            ...(customLang.trim() ? [customLang.trim()] : []),
+          ].join(", ");
+
+          if (!date || !time || !place.trim() || !langStr) {
+            return void toast.error("Заполните дату, время, место и язык интервью");
+          }
+
+          await onSubmit({
+            id: crypto.randomUUID(),
+            university: selectedUni.name,
+            country: selectedUni.country,
+            date,
+            time,
+            place: place.trim(),
+            language: langStr,
+            format,
+            note: note.trim(),
+            result: null,
+            result_comment: "",
+          });
+        }}
+      />
+    </Panel>
+  );
+}
+
+/** Оценка каждого назначенного интервью (Прошёл / Не прошёл по каждому вузу) */
+export function InterviewsResultForm({
+  app,
+  onSubmit,
+  onCancel,
+}: {
+  app: Application;
+  onSubmit: (updated: InterviewEntry[], summary: string, allFailed: boolean, anyPassed: boolean) => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  const initial = app.interviews ?? [];
+  const [items, setItems] = useState<InterviewEntry[]>(initial);
+
+  const setResult = (id: string, result: "Прошёл" | "Не прошёл") => {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, result } : it)));
+  };
+
+  const setComment = (id: string, result_comment: string) => {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, result_comment } : it)));
+  };
+
+  return (
+    <Panel title="☑️ Итоги интервью по каждому вузу (Прошёл / Не прошёл)">
+      <div className="space-y-2.5">
+        {items.map((iv, i) => (
+          <div key={iv.id} className="card space-y-2 rounded-xl p-3">
+            <div className="text-xs font-semibold">
+              {i + 1}) {iv.university} {iv.country ? `(${iv.country})` : ""} · 🗣 {iv.language} · 📅{" "}
+              {iv.date} {iv.time}
+            </div>
+            <div className="flex gap-2">
+              <label
+                className={`card flex-1 cursor-pointer rounded-lg p-2 text-center text-xs font-semibold ${
+                  iv.result === "Прошёл" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : ""
+                }`}
+              >
+                <input
+                  type="radio"
+                  className="mr-1.5"
+                  checked={iv.result === "Прошёл"}
+                  onChange={() => setResult(iv.id, "Прошёл")}
+                />
+                ✓ Прошёл
+              </label>
+              <label
+                className={`card flex-1 cursor-pointer rounded-lg p-2 text-center text-xs font-semibold ${
+                  iv.result === "Не прошёл" ? "border-red-500 bg-red-50 text-red-700" : ""
+                }`}
+              >
+                <input
+                  type="radio"
+                  className="mr-1.5"
+                  checked={iv.result === "Не прошёл"}
+                  onChange={() => setResult(iv.id, "Не прошёл")}
+                />
+                ✕ Не прошёл
+              </label>
+            </div>
+            <input
+              value={iv.result_comment ?? ""}
+              onChange={(e) => setComment(iv.id, e.target.value)}
+              placeholder="Комментарий по этому интервью (необязательно)"
+              className={input}
+            />
+          </div>
+        ))}
+      </div>
+
+      <Buttons
+        submitLabel="Сохранить итоги и уведомить студента"
+        onCancel={onCancel}
+        onSubmit={async () => {
+          const decided = items.filter((it) => it.result);
+          if (decided.length === 0) {
+            return void toast.error("Отметьте результат хотя бы для одного интервью");
+          }
+          const anyPassed = decided.some((it) => it.result === "Прошёл");
+          const allDecided = decided.length === items.length;
+          const allFailed = allDecided && !anyPassed;
+          const summary = items
+            .map((it) => `${it.university}: ${it.result ?? "ожидается"}`)
+            .join("; ");
+          await onSubmit(items, summary, allFailed, anyPassed);
         }}
       />
     </Panel>
