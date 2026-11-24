@@ -355,11 +355,23 @@ export default function StudentDashboard() {
       ...(appForm.social_status.length > 0 ? [SOCIAL_DOCUMENT] : []),
     ];
 
+    // Если студенту меньше 18 лет на сегодня — нотариальное согласие родителей обязательно
+    const isMinor = (() => {
+      const b = new Date(appForm.birth_date);
+      if (isNaN(b.getTime())) return false;
+      const today = new Date();
+      let age = today.getFullYear() - b.getFullYear();
+      const m = today.getMonth() - b.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < b.getDate())) age--;
+      return age < 18;
+    })();
+
     for (const dt of activeDocTypes) {
       const d = docsDraft[dt.type];
       const hasFile = Boolean(d?.file || d?.existingPath);
       const hasComment = Boolean(d?.comment?.trim());
-      if (dt.required && !hasFile && !hasComment) {
+      const mustHave = dt.required || (dt.type === "parent_consent" && isMinor);
+      if (mustHave && !hasFile && !hasComment) {
         toast.error(`Документ «${dt.label}»: прикрепите файл или напишите комментарий`);
         return;
       }
