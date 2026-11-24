@@ -16,6 +16,10 @@ import {
   X,
   FileText,
   AlertTriangle,
+  Download,
+  BookOpen,
+  CheckCircle2,
+  Globe,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getProfile, signOut } from "@/lib/auth";
@@ -40,12 +44,19 @@ import {
   DOCUMENT_TYPES,
   SOCIAL_DOCUMENT,
   MAX_UNIVERSITIES,
+  FUNDING,
   fundingOptions,
   type Profile,
   type Application,
   type UniversityChoice,
   type AppDocument,
 } from "@/lib/types";
+import {
+  PARTNER_COUNTRIES,
+  ALL_PARTNER_UNIVERSITIES,
+  RULES_UNIVERSITY_FUNDED,
+  RULES_SELF_FUNDED,
+} from "@/lib/partners";
 
 type Tab = "home" | "apply" | "status" | "chat" | "profile";
 
@@ -113,6 +124,8 @@ export default function StudentDashboard() {
 
   // Черновики по каждому документу из пакета
   const [docsDraft, setDocsDraft] = useState<Record<string, DocDraft>>({});
+  const [rulesAccepted, setRulesAccepted] = useState(false);
+  const [showPartnersList, setShowPartnersList] = useState(false);
   const [sending, setSending] = useState(false);
 
   // Профиль
@@ -219,6 +232,7 @@ export default function StudentDashboard() {
       };
     }
     setDocsDraft(draftMap);
+    setRulesAccepted(true);
     setActiveTab("apply");
     toast("Исправьте отмеченные документы/данные и отправьте заявку повторно", { icon: "📝" });
   };
@@ -289,6 +303,10 @@ export default function StudentDashboard() {
   // Отправка заявки
   const sendApplication = async () => {
     if (!student) return;
+    if (!rulesAccepted) {
+      toast.error("Талаптармен және құжаттар тізімімен танысқаныңызды растаңыз (құсбелгі қойыңыз)");
+      return;
+    }
     if (!appForm.birth_date) {
       toast.error("Укажите дату рождения");
       return;
@@ -308,6 +326,15 @@ export default function StudentDashboard() {
     const gpaNum = parseFloat(appForm.student_gpa.replace(",", "."));
     if (isNaN(gpaNum) || gpaNum < 0 || gpaNum > 4.0) {
       toast.error("Укажите корректный GPA (от 0.0 до 4.0)");
+      return;
+    }
+    const minGpa = appForm.funding_source === FUNDING.OWN ? 2.8 : 3.0;
+    if (gpaNum < minGpa) {
+      toast.error(
+        appForm.funding_source === FUNDING.OWN
+          ? "Өз қаражаты есебінен қатысу үшін GPA кемінде 2.80 болуы тиіс"
+          : "Университет / бюджет есебінен қатысу үшін GPA кемінде 3.00 болуы тиіс"
+      );
       return;
     }
 
@@ -703,8 +730,103 @@ export default function StudentDashboard() {
                   </div>
                 )}
 
-              <div className="mt-5 space-y-5">
-                {/* 1. Личные и учебные данные */}
+                <div className="space-y-5">
+                  {/* 0. Талаптар мен серіктес ЖОО тізімі (өтінім берер алдында танысу) */}
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-sm font-bold text-blue-900">
+                        <BookOpen size={16} />
+                        Өтінім берер алдында ережелермен және университеттер тізімімен танысыңыз
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowPartnersList(!showPartnersList)}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 shadow-sm hover:bg-blue-100 transition"
+                      >
+                        <Globe size={13} />
+                        {showPartnersList
+                          ? "Университеттер тізімін жасыру"
+                          : `Серіктес университеттер тізімі (${ALL_PARTNER_UNIVERSITIES.length} ЖОО)`}
+                      </button>
+                    </div>
+
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-xl bg-white p-3 shadow-sm">
+                        <div className="font-bold text-slate-800">
+                          Университет қаражаты есебінен бара алатын үміткерлерге қойылатын жалпы талаптар:
+                        </div>
+                        <ul className="mt-2 space-y-1 text-slate-600">
+                          {RULES_UNIVERSITY_FUNDED.map((r) => (
+                            <li key={r} className="flex items-start gap-1.5">
+                              <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-emerald-500" />
+                              <span>{r}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="flex flex-col justify-between rounded-xl bg-white p-3 shadow-sm">
+                        <div>
+                          <div className="font-bold text-slate-800">
+                            Өз қаражаты есебінен баратын білім алушыларға:
+                          </div>
+                          <p className="mt-2 leading-relaxed text-slate-600">{RULES_SELF_FUNDED}</p>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-2.5">
+                          <a
+                            href="/templates/otinish-rektor.doc"
+                            download
+                            className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+                          >
+                            <Download size={12} /> Ректор атына өтініш (.doc)
+                          </a>
+                          <a
+                            href="/templates/densaulyk-deklaraciya.doc"
+                            download
+                            className="inline-flex items-center gap-1 rounded-lg bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-700 hover:bg-teal-100"
+                          >
+                            <Download size={12} /> Денсаулық декларациясы (.doc)
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+
+                    {showPartnersList && (
+                      <div className="mt-3 max-h-72 overflow-y-auto rounded-xl border border-blue-100 bg-white p-3">
+                        <div className="mb-2 font-bold text-slate-800">
+                          Қабылдаушы серіктес университеттер ({PARTNER_COUNTRIES.length} ел,{" "}
+                          {ALL_PARTNER_UNIVERSITIES.length} ЖОО):
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {PARTNER_COUNTRIES.map((pc) => (
+                            <div key={pc.country} className="rounded-lg bg-slate-50 p-2.5">
+                              <div className="font-bold text-slate-800">
+                                {pc.flag} {pc.country}
+                              </div>
+                              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] text-slate-600">
+                                {pc.universities.map((u) => (
+                                  <li key={u}>{u}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl bg-white px-3 py-2.5 font-semibold text-slate-800 shadow-sm">
+                      <input
+                        type="checkbox"
+                        checked={rulesAccepted}
+                        onChange={(e) => setRulesAccepted(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                      />
+                      <span>
+                        Жоғарыдағы талаптармен, қажетті құжаттар тізімімен және серіктес университеттер тізімімен толық таныстым *
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* 1. Личные и учебные данные */}
                 <div className="space-y-3">
                   <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
                     1. Сведения о студенте и обучении
@@ -923,34 +1045,79 @@ export default function StudentDashboard() {
                     )}
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     {appForm.universities.map((u, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
-                          {idx + 1}
-                        </span>
-                        <input
-                          value={u.name}
-                          onChange={(e) => updateUni(idx, "name", e.target.value)}
-                          placeholder={`Принимающий вуз №${idx + 1} *`}
+                      <div key={idx} className="card space-y-2 rounded-xl p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
+                              {idx + 1}
+                            </span>
+                            <span className="text-xs font-semibold text-slate-600">
+                              Таңдау №{idx + 1}
+                            </span>
+                          </div>
+                          {appForm.universities.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeUni(idx)}
+                              className="rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                              title="Удалить вуз"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+
+                        <select
+                          value={
+                            ALL_PARTNER_UNIVERSITIES.some(
+                              (p) => p.name === u.name && p.country === u.country
+                            )
+                              ? `${u.country}|||${u.name}`
+                              : ""
+                          }
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (!val) return;
+                            const [c, n] = val.split("|||");
+                            setAppForm((prev) => ({
+                              ...prev,
+                              universities: prev.universities.map((item, i) =>
+                                i === idx ? { name: n, country: c } : item
+                              ),
+                            }));
+                          }}
                           className={inputClass}
-                        />
-                        <input
-                          value={u.country}
-                          onChange={(e) => updateUni(idx, "country", e.target.value)}
-                          placeholder="Страна *"
-                          className={`${inputClass} max-w-[200px]`}
-                        />
-                        {appForm.universities.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeUni(idx)}
-                            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-500"
-                            title="Удалить вуз"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        )}
+                        >
+                          <option value="">
+                            — Тізімнен серіктес университетті таңдаңыз (немесе төменге жазыңыз) —
+                          </option>
+                          {PARTNER_COUNTRIES.map((pc) => (
+                            <optgroup key={pc.country} label={`${pc.flag} ${pc.country}`}>
+                              {pc.universities.map((uni) => (
+                                <option key={uni} value={`${pc.country}|||${uni}`}>
+                                  {uni} ({pc.country})
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <input
+                            value={u.name}
+                            onChange={(e) => updateUni(idx, "name", e.target.value)}
+                            placeholder={`Қабылдаушы университет №${idx + 1} *`}
+                            className={inputClass}
+                          />
+                          <input
+                            value={u.country}
+                            onChange={(e) => updateUni(idx, "country", e.target.value)}
+                            placeholder="Елі / Страна *"
+                            className={inputClass}
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1007,13 +1174,27 @@ export default function StudentDashboard() {
                             fbNote ? "border-amber-400 bg-amber-50/40" : ""
                           }`}
                         >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="text-xs font-semibold">
-                              {dt.label}{" "}
-                              {dt.required ? (
-                                <span className="text-red-500">*</span>
-                              ) : (
-                                <span className="font-normal text-slate-400">(необязательно)</span>
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="space-y-1">
+                              <div className="text-xs font-semibold">
+                                {dt.label}{" "}
+                                {dt.required ? (
+                                  <span className="text-red-500">*</span>
+                                ) : (
+                                  <span className="font-normal text-slate-400">(бар болса / опционально)</span>
+                                )}
+                              </div>
+                              {dt.hint && (
+                                <div className="text-[11px] text-slate-500">{dt.hint}</div>
+                              )}
+                              {dt.templateUrl && (
+                                <a
+                                  href={dt.templateUrl}
+                                  download
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 transition"
+                                >
+                                  <Download size={12} /> {dt.templateLabel ?? "Шаблонды жүктеу (.doc)"}
+                                </a>
                               )}
                             </div>
 

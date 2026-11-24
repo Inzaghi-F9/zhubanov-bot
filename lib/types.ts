@@ -46,22 +46,89 @@ export interface DocumentType {
   type: string;
   label: string;
   required: boolean;
+  hint?: string;
+  templateUrl?: string;
+  templateLabel?: string;
 }
 
 /** Пакет документов: для каждого — файл или комментарий */
 export const DOCUMENT_TYPES: DocumentType[] = [
-  { type: "transcript", label: "Транскрипт (выписка оценок с GPA)", required: true },
-  { type: "application", label: "Заявление на участие", required: true },
-  { type: "id_card", label: "Удостоверение личности / паспорт", required: true },
-  { type: "motivation", label: "Мотивационное письмо", required: true },
-  { type: "recommendation", label: "Рекомендательное письмо", required: false },
-  { type: "language", label: "Сертификат знания языка (IELTS, TOEFL и др.)", required: false },
-  { type: "medical", label: "Медицинская справка 086-у", required: false },
+  {
+    type: "cv",
+    label: "Түйіндеме / Резюме",
+    hint: "Еркін нысанда (в свободной форме)",
+    required: true,
+  },
+  {
+    type: "id_card",
+    label: "Жеке куәліктің немесе паспорттың көшірмесі",
+    hint: "Копия удостоверения личности или паспорта",
+    required: true,
+  },
+  {
+    type: "application",
+    label: "Басқарма Төрағасы – Ректордың атына өтініш",
+    hint: "Шаблонды жүктеп, толтырып, декан мен кафедра меңгерушісінің қолын қойдырып тіркеңіз",
+    templateUrl: "/templates/otinish-rektor.doc",
+    templateLabel: "Өтініш шаблонын жүктеу (.doc)",
+    required: true,
+  },
+  {
+    type: "transcript",
+    label: "Ағымдағы үлгерімі туралы транскрипт",
+    hint: "СҚКО-дан / Темірқазықтан берілген (Бас ғимарат, 1 қабат)",
+    required: true,
+  },
+  {
+    type: "motivation",
+    label: "Мотивациялық хат",
+    hint: "2 беттен аспайтын: Times New Roman 12, интервал – қосаралық (double space)",
+    required: true,
+  },
+  {
+    type: "recommendation",
+    label: "Ұсыныс хат (бағдарламалық жетекші немесе оқытушыдан)",
+    hint: "2 беттен аспайтын: Times New Roman 12, интервал – қосаралық (double space)",
+    required: true,
+  },
+  {
+    type: "health_declaration",
+    label: "Денсаулық жағдайы туралы декларация",
+    hint: "Шаблонды жүктеп, толтырып, қол қойып тіркеңіз",
+    templateUrl: "/templates/densaulyk-deklaraciya.doc",
+    templateLabel: "Декларация шаблонын жүктеу (.doc)",
+    required: true,
+  },
+  {
+    type: "achievements",
+    label: "Дипломдар, сертификаттар мен марапаттар көшірмелері",
+    hint: "Халықаралық, Республикалық немесе бағыт бойынша (бар болған жағдайда)",
+    required: false,
+  },
+  {
+    type: "parent_consent",
+    label: "Ата-анасынан нотариалды куәландырылған рұқсат (қолхат)",
+    hint: "Үміткер 18 жасқа толмаған (кәмелетке толмаған) жағдайда міндетті",
+    required: false,
+  },
+  {
+    type: "photo_folder",
+    label: "3×4 фотосурет (6 дана) және файлдары бар папка (1 дана)",
+    hint: "Электронды фотоны тіркеңіз немесе түпнұсқасын тапсыру туралы пікір жазыңыз",
+    required: false,
+  },
+  {
+    type: "language",
+    label: "Тіл сертификаты (IELTS, TOEFL және т.б.)",
+    hint: "Бар болған жағдайда",
+    required: false,
+  },
 ];
 
 export const SOCIAL_DOCUMENT: DocumentType = {
   type: "social",
-  label: "Документ, подтверждающий социальное положение",
+  label: "Әлеуметтік жағдайын растайтын құжат (көп балалы отбасы / жетім / мүгедектік)",
+  hint: "Отбасы құрамы туралы немесе ата-анасының жоқтығын растайтын құжат көшірмесі",
   required: true,
 };
 

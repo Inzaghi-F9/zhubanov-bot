@@ -1,0 +1,54 @@
+\ufeff<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<title>Өтініш — Басқарма Төрағасы – Ректорға</title>
+<style>
+  body { font-family: "Times New Roman", serif; font-size: 12pt; line-height: 1.5; margin: 20mm 15mm 20mm 25mm; color: #000; }
+  .header { margin-left: 50%; text-align: left; margin-bottom: 24pt; }
+  .title { text-align: center; font-weight: bold; font-size: 14pt; margin: 16pt 0; }
+  .body-text { text-indent: 12.5mm; text-align: justify; margin-bottom: 24pt; }
+  .signs { width: 100%; border-collapse: collapse; margin-top: 20pt; }
+  .signs td { padding: 8pt 4pt; vertical-align: bottom; }
+  .right { text-align: right; }
+</style>
+</head>
+<body>
+  <div class="header">
+    «Қ. Жұбанов атындағы Ақтөбе<br>
+    өңірлік университеті» КеАҚ<br>
+    Басқарма Төрағасы – Ректор<br>
+    Г.И. Кобеноваға<br>
+    ___________________ білім беру<br>
+    <small>(Шифр және білім беру бағдарламасының атауы)</small><br>
+    бағдарламасы білім алушысы<br>
+    ___________________________________<br>
+    <small>(Т.А.Ә. толық)</small>
+  </div>
+
+  <div class="title">Өтініш</div>
+
+  <p class="body-text">
+    Сізден 20___–20___ оқу жылының ___ жартыжылдығына _________________________________________________
+    <i>(қабылдаушы университет атауы)</i> _________________________________________________
+    <i>(білім беру бағдарламасының атауы)</i> білім беру бағдарламасы бойынша халықаралық академиялық
+    ұтқырлық бағдарламасы бойынша конкурсқа қатысуға рұқсат беруіңізді сұраймын.
+  </p>
+
+  <table class="signs">
+    <tr>
+      <td></td>
+      <td class="right">Қолы: _______________________</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td class="right">Күні: «___» __________ 20___ ж.</td>
+    </tr>
+    <tr>
+      <td colspan="2" style="padding-top: 24pt;">Факультет деканының қолы: _______________________</td>
+    </tr>
+    <tr>
+      <td colspan="2">Кафедра меңгерушісінің қолы: _______________________</td>
+    </tr>
+  </table>
+</body>
+</html>

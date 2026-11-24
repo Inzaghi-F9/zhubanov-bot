@@ -1,196 +1,168 @@
 "use client";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+
+import { useState } from "react";
+import Link from "next/link";
+import { GraduationCap, ArrowLeft, Search, ArrowRight, CheckCircle2 } from "lucide-react";
+import {
+  PARTNER_COUNTRIES,
+  ALL_PARTNER_UNIVERSITIES,
+  RULES_UNIVERSITY_FUNDED,
+  RULES_SELF_FUNDED,
+} from "@/lib/partners";
 
 export default function MobilityProgramsPage() {
-  const router = useRouter();
-  const [isMobile, setIsMobile] = useState(false);
-  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [selectedCountry, setSelectedCountry] = useState<string>("Барлығы");
 
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
-
-  const programs = [
-    {
-      id: 1,
-      country: "Россия",
-      flag: "🇷🇺",
-      universities: [
-        { name: "Московский государственный университет", city: "Москва", specialties: "Все направления", duration: "1-2 семестра", level: "Бакалавриат, магистратура" },
-        { name: "Санкт-Петербургский политехнический университет", city: "Санкт-Петербург", specialties: "Инженерия, технологии", duration: "1-2 семестра", level: "Бакалавриат, магистратура" },
-        { name: "Томский политехнический университет", city: "Томск", specialties: "IT, инженерия", duration: "1-2 семестра", level: "Бакалавриат, магистратура" }
-      ]
-    },
-    {
-      id: 2,
-      country: "Узбекистан",
-      flag: "🇺🇿",
-      universities: [
-        { name: "Национальный университет Узбекистана", city: "Ташкент", specialties: "Гуманитарные науки, экономика", duration: "1-2 семестра", level: "Бакалавриат, магистратура" }
-      ]
-    },
-    {
-      id: 3,
-      country: "Кыргызстан",
-      flag: "🇰🇬",
-      universities: [
-        { name: "Кыргызский национальный университет", city: "Бишкек", specialties: "Все направления", duration: "1-2 семестра", level: "Бакалавриат, магистратура" }
-      ]
-    },
-    {
-      id: 4,
-      country: "Беларусь",
-      flag: "🇧🇾",
-      universities: [
-        { name: "Белорусский государственный университет", city: "Минск", specialties: "Все направления", duration: "1-2 семестра", level: "Бакалавриат, магистратура" }
-      ]
-    },
-    {
-      id: 5,
-      country: "Казахстан",
-      flag: "🇰🇿",
-      universities: [
-        { name: "Университет КИМЭП", city: "Алматы", specialties: "Экономика, бизнес", duration: "1-2 семестра", level: "Бакалавриат, магистратура" },
-        { name: "Евразийский национальный университет им. Л.Н. Гумилёва", city: "Астана", specialties: "Все направления", duration: "1-2 семестра", level: "Бакалавриат, магистратура" },
-        { name: "КазНУ им. аль-Фараби", city: "Алматы", specialties: "Все направления", duration: "1-2 семестра", level: "Бакалавриат, магистратура" }
-      ]
-    },
-    {
-      id: 6,
-      country: "Польша и Турция",
-      flag: "🇪🇺",
-      universities: [
-        { name: "Университет им. Адама Мицкевича (Познань)", city: "Познань", specialties: "Филология, педагогика, естественные науки", duration: "1 семестр", level: "Бакалавриат, магистратура" },
-        { name: "Университет Кастамону / Университет Нигде Омер Халисдемир", city: "Турция", specialties: "Все направления", duration: "1 семестр", level: "Бакалавриат, магистратура" }
-      ]
-    }
-  ];
-
-  const benefits = [
-    { icon: "🎓", title: "Новые знания", desc: "Получите опыт обучения в другом университете" },
-    { icon: "🌍", title: "Международное общение", desc: "Разноообразьте свой опыт, встречайтесь с новыми людьми" },
-    { icon: "💼", title: "Карьерные перспективы", desc: "Повысьте конкурентоспособность на рынке труда" },
-    { icon: "📜", title: "Признание", desc: "Получите признание достижений в других вузах" },
-    { icon: "🗣️", title: "Языковые навыки", desc: "Улучшите знание иностранных языков" },
-    { icon: "🤝", title: "Сети контактов", desc: "Расширьте профессиональную сеть" }
-  ];
-
-  const requirements = [
-    "Пройден минимум 1 семестр обучения",
-    "Средний балл не ниже 3.0 (GPA)",
-    "Отсутствие академических задолженностей",
-    "Готовность к обучению на иностранном языке (обычно английский)",
-    "Наличие всех необходимых документов",
-    "Здоровое состояние здоровья"
-  ];
+  const filteredCountries = PARTNER_COUNTRIES.map((c) => ({
+    ...c,
+    universities: c.universities.filter(
+      (u) =>
+        !search.trim() ||
+        u.toLowerCase().includes(search.toLowerCase()) ||
+        c.country.toLowerCase().includes(search.toLowerCase())
+    ),
+  })).filter(
+    (c) =>
+      c.universities.length > 0 &&
+      (selectedCountry === "Барлығы" || c.country === selectedCountry)
+  );
 
   return (
-    <div style={{ fontFamily: "'Inter', sans-serif", color: '#1e293b', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      {/* Header */}
-      <div style={{ background: 'linear-gradient(135deg, #1e3a5f, #0d9488)', padding: isMobile ? '16px' : '24px 32px', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '1200px', margin: '0 auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => router.push('/')}>
-            <span style={{ fontSize: '28px' }}>🌍</span>
+    <div className="min-h-screen bg-[color:var(--background)]">
+      {/* Навбар */}
+      <header className="sticky top-0 z-50 border-b border-[color:var(--border)] bg-[color:var(--card)]/85 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+          <Link href="/" className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md">
+              <GraduationCap size={19} />
+            </div>
             <div>
-              <div style={{ color: 'white', fontWeight: '700', fontSize: isMobile ? '18px' : '20px' }}>Программы мобильности</div>
-              <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px' }}>Список университетов-партнёров</div>
+              <div className="text-sm font-bold">Серіктес университеттер</div>
+              <div className="text-[11px] text-slate-400">
+                {PARTNER_COUNTRIES.length} ел · {ALL_PARTNER_UNIVERSITIES.length} ЖОО
+              </div>
+            </div>
+          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/auth"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-blue-700"
+            >
+              Өтінім беру <ArrowRight size={13} />
+            </Link>
+            <Link
+              href="/"
+              className="card inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition hover:border-blue-400"
+            >
+              <ArrowLeft size={13} /> Басты бет
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-6xl space-y-8 px-4 py-8">
+        {/* Талаптар */}
+        <section className="grid gap-4 md:grid-cols-2">
+          <div className="card rounded-2xl p-5 shadow-sm">
+            <h2 className="text-sm font-bold text-blue-700">
+              🎓 Университет қаражаты есебінен баратын үміткерлерге қойылатын талаптар
+            </h2>
+            <ul className="mt-3 space-y-2 text-xs text-slate-600">
+              {RULES_UNIVERSITY_FUNDED.map((r) => (
+                <li key={r} className="flex items-start gap-2">
+                  <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-500" />
+                  <span>{r}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="card flex flex-col justify-between rounded-2xl p-5 shadow-sm">
+            <div>
+              <h2 className="text-sm font-bold text-indigo-700">
+                💼 Өз қаражаты есебінен баратын білім алушыларға
+              </h2>
+              <p className="mt-3 text-xs leading-relaxed text-slate-600">{RULES_SELF_FUNDED}</p>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-[color:var(--border)] pt-3">
+              <a
+                href="/templates/otinish-rektor.doc"
+                download
+                className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+              >
+                📥 Өтініш шаблоны (.doc)
+              </a>
+              <a
+                href="/templates/densaulyk-deklaraciya.doc"
+                download
+                className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-100"
+              >
+                📥 Денсаулық декларациясы (.doc)
+              </a>
             </div>
           </div>
-          <button onClick={() => router.push('/')} style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' }}>
-            ← Вернуться
-          </button>
-        </div>
-      </div>
+        </section>
 
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: isMobile ? '16px' : '32px' }}>
-        {/* Преимущества */}
-        <h2 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '20px' }}>Преимущества программы академической мобильности</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '16px', marginBottom: '32px' }}>
-          {benefits.map((benefit, i) => (
-            <div key={i} style={{ background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', textAlign: 'center' }}>
-              <div style={{ fontSize: '40px', marginBottom: '12px' }}>{benefit.icon}</div>
-              <div style={{ fontWeight: '600', marginBottom: '8px', fontSize: '15px' }}>{benefit.title}</div>
-              <div style={{ color: '#64748b', fontSize: '13px' }}>{benefit.desc}</div>
+        {/* Поиск и фильтр по странам */}
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-xl font-extrabold">
+              Қабылдаушы серіктес университеттер тізімі ({ALL_PARTNER_UNIVERSITIES.length} ЖОО)
+            </h1>
+            <div className="relative w-full sm:w-72">
+              <Search
+                size={15}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Университет немесе ел іздеу…"
+                className="card w-full rounded-xl py-2 pl-9 pr-3 text-xs outline-none focus:border-blue-500"
+              />
             </div>
-          ))}
-        </div>
+          </div>
 
-        {/* Требования */}
-        <h2 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '20px' }}>Требования для участия</h2>
-        <div style={{ background: 'white', padding: isMobile ? '20px' : '24px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: '32px' }}>
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '12px' }}>
-            {requirements.map((req, i) => (
-              <li key={i} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                <span style={{ color: '#0d9488', fontWeight: 'bold', fontSize: '18px' }}>✓</span>
-                <span style={{ color: '#475569', fontSize: '14px' }}>{req}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Университеты */}
-        <h2 style={{ fontSize: '24px', fontWeight: '700', marginBottom: '20px' }}>Университеты-партнёры</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px' }}>
-          {programs.map((program) => (
-            <div key={program.id} style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+          <div className="flex flex-wrap gap-1.5">
+            {["Барлығы", ...PARTNER_COUNTRIES.map((c) => c.country)].map((c) => (
               <button
-                onClick={() => setSelectedCountry(selectedCountry === program.country ? null : program.country)}
-                style={{
-                  width: '100%',
-                  padding: '20px',
-                  background: selectedCountry === program.country ? '#f0f4f8' : 'white',
-                  border: 'none',
-                  borderBottom: selectedCountry === program.country ? '3px solid #0d9488' : 'none',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  transition: 'all 0.2s'
-                }}
+                key={c}
+                onClick={() => setSelectedCountry(c)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  selectedCountry === c
+                    ? "bg-blue-600 text-white shadow"
+                    : "card hover:border-blue-400"
+                }`}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '32px' }}>{program.flag}</span>
-                  <div>
-                    <div style={{ fontWeight: '700', fontSize: '16px' }}>{program.country}</div>
-                    <div style={{ color: '#64748b', fontSize: '13px' }}>{program.universities.length} университет</div>
-                  </div>
-                </div>
-                <span style={{ fontSize: '20px' }}>{selectedCountry === program.country ? '−' : '+'}</span>
+                {c}
               </button>
+            ))}
+          </div>
 
-              {selectedCountry === program.country && (
-                <div style={{ padding: '16px', background: '#f9fafb', borderTop: '1px solid #e2e8f0' }}>
-                  {program.universities.map((uni, i) => (
-                    <div key={i} style={{ marginBottom: i < program.universities.length - 1 ? '16px' : 0, paddingBottom: i < program.universities.length - 1 ? '16px' : 0, borderBottom: i < program.universities.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
-                      <div style={{ fontWeight: '600', fontSize: '14px', marginBottom: '8px', color: '#1e293b' }}>{uni.name}</div>
-                      <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.6' }}>
-                        <div>📍 Город: {uni.city}</div>
-                        <div>📚 Специальности: {uni.specialties}</div>
-                        <div>⏱️ Длительность: {uni.duration}</div>
-                        <div>🎓 Уровень: {uni.level}</div>
-                      </div>
-                    </div>
-                  ))}
+          <div className="grid gap-4 md:grid-cols-2">
+            {filteredCountries.map((item) => (
+              <div key={item.country} className="card rounded-2xl p-5 shadow-sm">
+                <div className="flex items-center justify-between border-b border-[color:var(--border)] pb-2.5">
+                  <div className="flex items-center gap-2 text-base font-bold">
+                    <span className="text-2xl">{item.flag}</span> {item.country}
+                  </div>
+                  <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
+                    {item.universities.length} ЖОО
+                  </span>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* CTA */}
-        <div style={{ background: 'linear-gradient(135deg, #1e3a5f, #0d9488)', color: 'white', padding: isMobile ? '24px 16px' : '32px 40px', borderRadius: '12px', marginTop: '32px', textAlign: 'center' }}>
-          <h3 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '12px' }}>Готовы к новому опыту?</h3>
-          <p style={{ fontSize: '14px', marginBottom: '16px', opacity: 0.9 }}>Подайте заявку на участие в программе академической мобильности</p>
-          <button onClick={() => router.push('/auth')} style={{ background: 'white', color: '#1e3a5f', padding: '12px 28px', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', fontSize: '14px' }}>
-            Заполнить заявку →
-          </button>
-        </div>
-      </div>
+                <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-xs text-slate-700">
+                  {item.universities.map((u) => (
+                    <li key={u} className="font-medium">
+                      {u}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
     </div>
   );
 }
